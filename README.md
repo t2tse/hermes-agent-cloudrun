@@ -594,7 +594,7 @@ The Hermes TUI runs inside the pod. Connect with an interactive shell:
 kubectl exec -it -n hermes deploy/hermes-agent-alice -- bash
 
 # Inside the pod, start TUI
-hermes tui
+hermes chat
 ```
 
 In the TUI:
