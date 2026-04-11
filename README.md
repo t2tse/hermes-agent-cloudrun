@@ -22,66 +22,74 @@ Deploy [Hermes Agent](https://github.com/nousresearch/hermes-agent) on Google Cl
 
 ```mermaid
 graph TD
+    Dev["Developer (kubectl / TUI)"]
+
+    Dev -->|"port-forward :8443"| PodA
+    Dev -->|"port-forward :8443"| PodB
+
     subgraph GCP["GCP Project"]
-        subgraph VPC["VPC Network"]
-            NAT["Cloud NAT"]
 
-            subgraph GKE["GKE Autopilot Cluster (gVisor)"]
-                subgraph NS["Namespace: hermes"]
-                    subgraph PodAlice["Pod: hermes-agent-alice"]
-                        Hermes_A["Hermes Agent"]
-                        Proxy_A["Vertex AI Proxy\n:8081"]
-                        Hermes_A -->|"localhost:8081\nOpenAI-compatible"| Proxy_A
-                    end
+        subgraph GKE["GKE Autopilot — all pods sandboxed by gVisor"]
+            subgraph NS["Namespace: hermes"]
 
-                    subgraph PodBob["Pod: hermes-agent-bob"]
-                        Hermes_B["Hermes Agent"]
-                        Proxy_B["Vertex AI Proxy\n:8081"]
-                        Hermes_B -->|"localhost:8081\nOpenAI-compatible"| Proxy_B
-                    end
-
-                    KSA["K8s ServiceAccount\nhermes-agent"]
-                    PVC_A["PVC: hermes-pvc-alice\n10Gi"]
-                    PVC_B["PVC: hermes-pvc-bob\n10Gi"]
-                    Secret["K8s Secret\ngateway-token"]
-
-                    PodAlice --> PVC_A
-                    PodBob --> PVC_B
-                    PodAlice --> KSA
-                    PodBob --> KSA
+                subgraph PodA["Pod: hermes-agent-alice"]
+                    direction LR
+                    HA["Hermes Agent\n(gateway :8443)"]
+                    PA["Vertex AI Proxy\n(background process :8081)"]
+                    HA -->|"localhost:8081\nOpenAI-compat API"| PA
                 end
+
+                subgraph PodB["Pod: hermes-agent-bob"]
+                    direction LR
+                    HB["Hermes Agent\n(gateway :8443)"]
+                    PB["Vertex AI Proxy\n(background process :8081)"]
+                    HB -->|"localhost:8081\nOpenAI-compat API"| PB
+                end
+
+                PodA -.-|"mount"| PVCA["PVC alice (10Gi)"]
+                PodB -.-|"mount"| PVCB["PVC bob (10Gi)"]
+
+                KSA["K8s SA: hermes-agent"]
+                PodA -.- KSA
+                PodB -.- KSA
             end
-
-            GKE --> NAT
         end
 
-        WI["Workload Identity"]
-        GSA["GCP Service Account\nhermes-agent@"]
+        KSA -->|"Workload Identity"| GSA["GCP SA: hermes-agent@"]
 
-        KSA -->|"Workload Identity\nBinding"| WI
-        WI --> GSA
+        GSA -->|"roles/aiplatform.user"| Vertex["Vertex AI (Global)\nGemini Models"]
+        PA -->|"Bearer token (ADC)"| Vertex
+        PB -->|"Bearer token (ADC)"| Vertex
 
-        subgraph VertexAI["Vertex AI (Global)"]
-            Gemini["Gemini Models\ngemini-3.1-flash-lite\ngemini-2.5-flash"]
+        subgraph Ops["Operations"]
+            direction LR
+            Logging["Cloud Logging"]
+            GCS["GCS Log Bucket"]
+            Mon["Monitoring\nDashboard + Alerts"]
+            Logging --> GCS
+            Logging --> Mon
         end
 
-        Proxy_A -->|"Bearer token\n(ADC auto-refresh)"| VertexAI
-        Proxy_B -->|"Bearer token\n(ADC auto-refresh)"| VertexAI
-        GSA -->|"roles/aiplatform.user"| VertexAI
+        GKE -->|"pod logs"| Logging
 
-        AR["Artifact Registry\nhermes-agent"]
-        CB["Cloud Build"]
-        SM["Secret Manager\ngateway-token"]
-        Logging["Cloud Logging\n+ GCS Sink"]
-        Monitoring["Cloud Monitoring\nDashboard + Alerts"]
+        subgraph CI["Build Pipeline"]
+            direction LR
+            CB["Cloud Build"] -->|"push image"| AR["Artifact Registry"]
+        end
 
-        CB -->|"Build & Push"| AR
-        GKE -->|"Pull Image"| AR
-        GKE --> Logging
-        Logging --> Monitoring
+        AR -->|"pull image"| GKE
+
+        SM["Secret Manager\n(gateway token)"]
+        SM -.-|"mount as env"| NS
+
+        subgraph Net["VPC Network"]
+            direction LR
+            NAT["Cloud NAT\n(outbound only)"]
+            FW["Deny-all ingress\n+ IAP SSH only"]
+        end
+
+        GKE --- Net
     end
-
-    Developer["Developer\n(kubectl / TUI)"] -->|"port-forward\nor IAP tunnel"| GKE
 ```
 
 ### Component Overview
@@ -89,7 +97,7 @@ graph TD
 | Component | Purpose |
 |-----------|---------|
 | **GKE Autopilot** | Managed Kubernetes with automatic gVisor sandboxing on every pod |
-| **Vertex AI Proxy** | Lightweight Python sidecar (~200 LOC) replacing LiteLLM; injects ADC Bearer tokens into OpenAI-compatible requests |
+| **Vertex AI Proxy** | Lightweight Python background process (~200 LOC) replacing LiteLLM; runs inside the same container and injects ADC Bearer tokens into OpenAI-compatible requests |
 | **Workload Identity** | Maps K8s ServiceAccount to GCP SA — no API keys stored anywhere |
 | **Per-Developer Pods** | Each developer gets an isolated pod + PVC with their own Hermes instance |
 | **Cloud Build** | Builds and pushes the Hermes container image to Artifact Registry |
