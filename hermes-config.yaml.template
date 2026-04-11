@@ -1,0 +1,33 @@
+# Hermes Agent configuration -- deployed via Terraform
+# Vertex AI models are accessed through the local proxy sidecar (port 8081)
+# which handles ADC/Workload Identity token injection.
+
+model:
+  provider: "custom"
+  default: "${HERMES_DEFAULT_MODEL}"
+  base_url: "http://127.0.0.1:8081/v1"
+  api_key: "not-needed-adc-via-proxy"  # Auth handled by Vertex AI proxy, not API key
+  context_length: 1000000
+  max_tokens: 8192
+
+terminal:
+  backend: "local"
+  cwd: "/opt/data/workspace"
+  timeout: 180
+
+compression:
+  enabled: true
+  strategy: "summary"
+
+browser:
+  inactivity_timeout: 30
+
+smart_model_routing:
+  enabled: false
+
+security:
+  tirith:
+    enabled: false
+
+worktree:
+  enabled: false

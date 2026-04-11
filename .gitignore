@@ -1,0 +1,15 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+# .terraform.lock.hcl  # Commit lock file for reproducible builds
+
+# Secrets
+*.pem
+*.key
+terraform.tfvars
+
+# OS
+.DS_Store
+Thumbs.db
