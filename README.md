@@ -132,14 +132,6 @@ Pod → K8s ServiceAccount → Workload Identity → GCP Service Account → Ver
 - Tokens are automatically refreshed before expiry — no key rotation needed.
 - The only secret stored is the gateway auth token (auto-generated, stored in Secret Manager).
 
-### LiteLLM Removal
-
-LiteLLM was removed after [a supply chain compromise in v0.5.0](https://hermesagent.nousresearch.com/docs/). It is replaced by a purpose-built ~200-line proxy (`scripts/vertex_ai_proxy.py`) that:
-
-- Has zero external dependencies beyond `httpx` and `google-auth`
-- Runs on `localhost` only (not network-accessible)
-- Does exactly one thing: inject ADC Bearer tokens into forwarded requests
-
 ### Network Isolation
 
 | Control | Implementation |
