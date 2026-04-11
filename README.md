@@ -271,7 +271,7 @@ kubectl exec -n hermes deploy/hermes-agent-alice -- \
 
 ### Step 5: Test via kubectl exec
 
-Hermes TUI runs inside the pod — connect directly with `kubectl exec`:
+Hermes runs inside the pod — connect directly with `kubectl exec`:
 
 ```bash
 export PROJECT_ID="your-project-id"
@@ -280,17 +280,16 @@ export PROJECT_ID="your-project-id"
 gcloud container clusters get-credentials hermes-cluster \
   --region us-central1 --project $PROJECT_ID
 
-# Interactive shell into a developer pod
-kubectl exec -it -n hermes deploy/hermes-agent-alice -- bash
+# Test the Vertex AI proxy
+kubectl exec -n hermes deploy/hermes-agent-alice -- curl -s http://127.0.0.1:8081/health
+# Expected: {"status":"ok"}
 
-# Inside the pod, test the proxy
-curl -s http://127.0.0.1:8081/health
-curl -s http://127.0.0.1:8081/v1/models
+kubectl exec -n hermes deploy/hermes-agent-alice -- curl -s http://127.0.0.1:8081/v1/models
+# Expected: JSON listing your configured model aliases
 
-# Test a chat completion
-curl -s http://127.0.0.1:8081/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"Hello"}]}'
+# Start an interactive Hermes chat session
+# NOTE: You must cd to /opt/data/workspace (a git repo) before running hermes chat
+kubectl exec -it -n hermes deploy/hermes-agent-alice -- bash -c 'cd /opt/data/workspace && hermes chat'
 ```
 
 > **Note:** The `hermes` CLI is only available inside the pod, not on Cloud Shell.
@@ -585,28 +584,33 @@ Expected: Lists available tools (terminal, file operations, git, python, etc.) a
 
 [Back to top](#table-of-contents)
 
-### Test 6: TUI Conversation
+### Test 6: Interactive Chat Session
 
-The Hermes TUI runs inside the pod. Connect with an interactive shell:
+Hermes chat runs inside the pod. You must be in a git repo directory:
 
 ```bash
-# Open an interactive session
-kubectl exec -it -n hermes deploy/hermes-agent-alice -- bash
-
-# Inside the pod, start TUI
-hermes chat
+# Start interactive chat (must cd to workspace first)
+kubectl exec -it -n hermes deploy/hermes-agent-alice -- \
+  bash -c 'cd /opt/data/workspace && hermes chat'
 ```
 
-In the TUI:
+In the chat:
 1. Type: `Hello, what model are you?` — Verify the model responds and identifies itself as Gemini.
 2. Type: `What is the capital of France?` — Verify multi-turn works (it should remember context).
-3. Type: `exit` to quit.
+3. Press `Ctrl+C` to quit.
+
+You can also run a single non-interactive query:
+
+```bash
+kubectl exec -n hermes deploy/hermes-agent-alice -- \
+  bash -c 'cd /opt/data/workspace && hermes chat -q "What is 2+2?"'
+```
 
 [Back to top](#table-of-contents)
 
 ### Test 7: Tool Execution (Terminal)
 
-In the TUI, ask Hermes to run commands:
+In the interactive chat session, ask Hermes to run commands:
 
 ```
 > List the files in the current directory
