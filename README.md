@@ -269,16 +269,33 @@ kubectl exec -n hermes deploy/hermes-agent-alice -- \
   curl -s http://127.0.0.1:8081/v1/models
 ```
 
-### Step 5: Connect via TUI
+### Step 5: Test via kubectl exec
+
+Hermes TUI runs inside the pod — connect directly with `kubectl exec`:
 
 ```bash
-# Port-forward the gateway
-kubectl port-forward -n hermes deploy/hermes-agent-alice 8443:8443 &
+export PROJECT_ID="your-project-id"
 
-# Connect with Hermes TUI
-hermes tui --gateway-url http://localhost:8443 \
-  --auth-token $(gcloud secrets versions access latest --secret=hermes-gateway-token --project=$PROJECT_ID)
+# Ensure Cloud Shell IP is in master_authorized_cidrs, then get credentials
+gcloud container clusters get-credentials hermes-cluster \
+  --region us-central1 --project $PROJECT_ID
+
+# Interactive shell into a developer pod
+kubectl exec -it -n hermes deploy/hermes-agent-alice -- bash
+
+# Inside the pod, test the proxy
+curl -s http://127.0.0.1:8081/health
+curl -s http://127.0.0.1:8081/v1/models
+
+# Test a chat completion
+curl -s http://127.0.0.1:8081/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"Hello"}]}'
 ```
+
+> **Note:** The `hermes` CLI is only available inside the pod, not on Cloud Shell.
+> Make sure your Cloud Shell external IP is listed in `master_authorized_cidrs`
+> in `terraform.tfvars`, or `kubectl` will time out connecting to the cluster.
 
 [Back to top](#table-of-contents)
 
@@ -570,16 +587,14 @@ Expected: Lists available tools (terminal, file operations, git, python, etc.) a
 
 ### Test 6: TUI Conversation
 
+The Hermes TUI runs inside the pod. Connect with an interactive shell:
+
 ```bash
-# Port-forward the gateway
-kubectl port-forward -n hermes deploy/hermes-agent-alice 8443:8443 &
+# Open an interactive session
+kubectl exec -it -n hermes deploy/hermes-agent-alice -- bash
 
-# Get the gateway auth token
-TOKEN=$(gcloud secrets versions access latest \
-  --secret=hermes-gateway-token --project=$PROJECT_ID)
-
-# Start TUI
-hermes tui --gateway-url http://localhost:8443 --auth-token $TOKEN
+# Inside the pod, start TUI
+hermes tui
 ```
 
 In the TUI:
