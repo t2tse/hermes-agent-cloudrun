@@ -533,9 +533,24 @@ kubectl rollout restart deploy/hermes-agent-alice -n hermes
 
 > **Security:** Bot tokens are injected as environment variables from K8s secrets — they never touch the filesystem, so Hermes file tools cannot read them even under indirect prompt injection. `TELEGRAM_ALLOWED_USERS` restricts which Telegram user IDs can interact with the bot.
 
-#### 7. Test
+#### 7. Pair Your Telegram Account
 
-Send a message to your bot on Telegram. You should receive a response from Hermes.
+Send any message to your bot on Telegram. It will reply with a pairing code:
+
+> Hi~ I don't recognize you yet! Here's your pairing code: `XXXXXXXX`
+
+Approve the pairing code from inside the pod:
+
+```bash
+kubectl exec -n hermes deploy/hermes-agent-alice -- \
+  hermes pairing approve telegram XXXXXXXX
+```
+
+Replace `XXXXXXXX` with the code shown in Telegram.
+
+#### 8. Test
+
+Send a message to your bot on Telegram. You should now receive a response from Hermes.
 
 ---
 
