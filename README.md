@@ -488,24 +488,23 @@ kubectl create secret generic hermes-telegram \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-#### 5. Add Environment Variables to the Deployment
+#### 5. Inject the Secret into the Deployment
 
-Add these `env` blocks to the container spec in `kubernetes.tf` (inside the `kubernetes_deployment` resource):
+Add the bot token (from K8s secret) and allowed user IDs as environment variables:
 
-```hcl
-env {
-  name = "TELEGRAM_BOT_TOKEN"
-  value_from {
-    secret_key_ref {
-      name = "hermes-telegram"
-      key  = "bot-token"
-    }
-  }
-}
-env {
-  name  = "TELEGRAM_ALLOWED_USERS"
-  value = "YOUR_TELEGRAM_USER_ID"  # Comma-separated user IDs
-}
+```bash
+kubectl patch deploy hermes-agent-alice -n hermes --type=json -p='[
+  {"op":"add","path":"/spec/template/spec/containers/0/env/-",
+   "value":{"name":"TELEGRAM_BOT_TOKEN","valueFrom":{"secretKeyRef":{"name":"hermes-telegram","key":"bot-token"}}}},
+  {"op":"add","path":"/spec/template/spec/containers/0/env/-",
+   "value":{"name":"TELEGRAM_ALLOWED_USERS","value":"YOUR_TELEGRAM_USER_ID"}}
+]'
+```
+
+The pod will automatically restart. Wait for it to be ready:
+
+```bash
+kubectl wait --for=condition=ready pod -n hermes -l developer=alice --timeout=120s
 ```
 
 #### 6. Enable Telegram in Hermes Config
@@ -515,10 +514,10 @@ kubectl exec -n hermes deploy/hermes-agent-alice -- \
   hermes config set messaging.telegram.enabled true
 ```
 
-#### 7. Redeploy
+#### 7. Restart the Gateway
 
 ```bash
-terraform apply
+kubectl rollout restart deploy/hermes-agent-alice -n hermes
 ```
 
 > **Security:** Bot tokens are injected as environment variables from K8s secrets — they never touch the filesystem, so Hermes file tools cannot read them even under indirect prompt injection. `TELEGRAM_ALLOWED_USERS` restricts which Telegram user IDs can interact with the bot.
@@ -599,29 +598,21 @@ kubectl create secret generic hermes-line \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-#### 6. Add Environment Variables to the Deployment
+#### 6. Inject the Secret into the Deployment
 
-Add these `env` blocks to the container spec in `kubernetes.tf`:
+```bash
+kubectl patch deploy hermes-agent-alice -n hermes --type=json -p='[
+  {"op":"add","path":"/spec/template/spec/containers/0/env/-",
+   "value":{"name":"LINE_CHANNEL_ACCESS_TOKEN","valueFrom":{"secretKeyRef":{"name":"hermes-line","key":"access-token"}}}},
+  {"op":"add","path":"/spec/template/spec/containers/0/env/-",
+   "value":{"name":"LINE_CHANNEL_SECRET","valueFrom":{"secretKeyRef":{"name":"hermes-line","key":"channel-secret"}}}}
+]'
+```
 
-```hcl
-env {
-  name = "LINE_CHANNEL_ACCESS_TOKEN"
-  value_from {
-    secret_key_ref {
-      name = "hermes-line"
-      key  = "access-token"
-    }
-  }
-}
-env {
-  name = "LINE_CHANNEL_SECRET"
-  value_from {
-    secret_key_ref {
-      name = "hermes-line"
-      key  = "channel-secret"
-    }
-  }
-}
+Wait for the pod to restart:
+
+```bash
+kubectl wait --for=condition=ready pod -n hermes -l developer=alice --timeout=120s
 ```
 
 #### 7. Enable LINE in Hermes Config
@@ -631,10 +622,10 @@ kubectl exec -n hermes deploy/hermes-agent-alice -- \
   hermes config set messaging.line.enabled true
 ```
 
-#### 8. Redeploy
+#### 8. Restart the Gateway
 
 ```bash
-terraform apply
+kubectl rollout restart deploy/hermes-agent-alice -n hermes
 ```
 
 #### 9. Set the Webhook URL in LINE Console
