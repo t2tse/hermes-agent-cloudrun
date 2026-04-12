@@ -489,30 +489,27 @@ kubectl create secret generic hermes-telegram \
 
 #### 5. Add Environment Variables to the Deployment
 
-Add these `env` blocks to the container spec in [kubernetes.tf](kubernetes.tf) (inside the `kubernetes_deployment` resource, under the existing `env` blocks):
-
-```hcl
-env {
-  name = "TELEGRAM_BOT_TOKEN"
-  value_from {
-    secret_key_ref {
-      name = "hermes-telegram"
-      key  = "bot-token"
-    }
-  }
-}
-env {
-  name  = "TELEGRAM_ALLOWED_USERS"
-  value = "YOUR_TELEGRAM_USER_ID"  # Comma-separated user IDs
-}
-```
-
-#### 6. Deploy and Enable Telegram
-
-Apply the changes (Terraform handles the rollout safely with the `ReadWriteOnce` PVC):
+Scale down the deployment first to avoid PVC Multi-Attach errors during the rollout:
 
 ```bash
-terraform apply
+kubectl scale deploy hermes-agent-alice -n hermes --replicas=0
+```
+
+Patch the deployment to inject the bot token from the K8s secret and set the allowed user IDs:
+
+```bash
+kubectl patch deploy hermes-agent-alice -n hermes --type=json -p='[
+  {"op":"add","path":"/spec/template/spec/containers/0/env/-",
+   "value":{"name":"TELEGRAM_BOT_TOKEN","valueFrom":{"secretKeyRef":{"name":"hermes-telegram","key":"bot-token"}}}},
+  {"op":"add","path":"/spec/template/spec/containers/0/env/-",
+   "value":{"name":"TELEGRAM_ALLOWED_USERS","value":"YOUR_TELEGRAM_USER_ID"}}
+]'
+```
+
+Scale back up:
+
+```bash
+kubectl scale deploy hermes-agent-alice -n hermes --replicas=1
 ```
 
 Wait for the pod to be ready:
@@ -521,7 +518,7 @@ Wait for the pod to be ready:
 kubectl wait --for=condition=ready pod -n hermes -l developer=alice --timeout=180s
 ```
 
-Enable Telegram in the Hermes config:
+#### 6. Enable Telegram in Hermes Config
 
 ```bash
 kubectl exec -n hermes deploy/hermes-agent-alice -- \
