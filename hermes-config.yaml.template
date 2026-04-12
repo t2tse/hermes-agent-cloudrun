@@ -13,6 +13,11 @@ terminal:
   cwd: "/opt/data/workspace"
   timeout: 180
 
+# Dangerous command approval -- always require human confirmation
+approvals:
+  mode: "manual"
+  timeout: 60
+
 compression:
   enabled: true
   strategy: "summary"
@@ -23,6 +28,19 @@ browser:
 smart_model_routing:
   enabled: false
 
+# Security hardening
 security:
+  # Tirith pre-exec scanning: detects homograph URLs, pipe-to-shell,
+  # terminal injection attacks before command execution
   tirith:
-    enabled: false
+    enabled: true
+    fail_open: false
+
+  # Block access to GCP metadata and internal services
+  website_blocklist:
+    enabled: true
+    domains:
+      - "metadata.google.internal"
+      - "metadata.goog"
+      - "169.254.169.254"
+      - "*.internal"

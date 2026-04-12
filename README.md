@@ -112,7 +112,11 @@ graph TD
 
 [Back to top](#table-of-contents)
 
-### gVisor Kernel-Level Sandboxing
+This deployment implements defense-in-depth across infrastructure, network, identity, and application layers.
+
+### Infrastructure Layer
+
+#### gVisor Kernel-Level Sandboxing
 
 Every pod on GKE Autopilot runs inside a [gVisor](https://gvisor.dev/) sandbox automatically. gVisor intercepts all system calls from the container and re-implements them in a user-space kernel (`runsc`). This means:
 
@@ -120,7 +124,22 @@ Every pod on GKE Autopilot runs inside a [gVisor](https://gvisor.dev/) sandbox a
 - **No nested virtualization overhead** — Unlike the previous Kata Container approach (which ran full VMs), gVisor operates at the syscall level with lower memory and startup cost.
 - **Zero configuration** — Autopilot enforces gVisor on all workloads. There is no way to opt out, eliminating misconfiguration risk.
 
-### Zero API Keys in the Cluster
+#### Per-Developer Isolation
+
+Each developer gets a dedicated pod and PersistentVolumeClaim. There is no shared filesystem — Alice cannot read Bob's files and vice versa.
+
+### Network Layer
+
+| Control | Implementation |
+|---------|---------------|
+| Private GKE nodes | `enable_private_nodes = true` — nodes have no public IPs |
+| Cloud NAT | Outbound-only internet access for pulling images and calling Vertex AI |
+| Deny-all ingress firewall | Default deny on the VPC; only IAP SSH (35.235.240.0/20) is allowed |
+| Master authorized networks | Control plane access restricted to the GKE subnet + explicitly listed CIDRs |
+
+### Identity Layer
+
+#### Zero API Keys in the Cluster
 
 The entire authentication chain uses identity federation — no secrets containing API keys exist:
 
@@ -132,17 +151,7 @@ Pod → K8s ServiceAccount → Workload Identity → GCP Service Account → Ver
 - Tokens are automatically refreshed before expiry — no key rotation needed.
 - The only secret stored is the gateway auth token (auto-generated, stored in Secret Manager).
 
-### Network Isolation
-
-| Control | Implementation |
-|---------|---------------|
-| Private GKE nodes | `enable_private_nodes = true` — nodes have no public IPs |
-| Cloud NAT | Outbound-only internet access for pulling images and calling Vertex AI |
-| Deny-all ingress firewall | Default deny on the VPC; only IAP SSH (35.235.240.0/20) is allowed |
-| Master authorized networks | Control plane access restricted to the GKE subnet + explicitly listed CIDRs |
-| Per-developer PVC isolation | Each developer's data is on a separate PersistentVolumeClaim — no shared filesystem |
-
-### IAM Least Privilege
+#### IAM Least Privilege
 
 The Hermes Agent service account has only:
 
@@ -152,6 +161,138 @@ The Hermes Agent service account has only:
 | `roles/logging.logWriter` | Write structured logs |
 | `roles/monitoring.metricWriter` | Write custom metrics |
 | `roles/secretmanager.secretAccessor` | Read gateway token (per-secret binding, not project-wide) |
+
+### Application Layer (Hermes Security Features)
+
+These features are configured in `hermes-config.yaml.template` and enforced inside every pod.
+
+#### Dangerous Command Approval
+
+All destructive commands require explicit human approval before execution. Configured as:
+
+```yaml
+approvals:
+  mode: "manual"    # Always prompt — never auto-approve
+  timeout: 60       # Deny if no response within 60 seconds (fail-closed)
+```
+
+Hermes checks every command against a curated list of dangerous patterns (`rm -rf`, `DROP TABLE`, `chmod 777`, `curl | sh`, `kill -9`, etc.). Matching commands are blocked until the user explicitly approves. See the [Hermes security docs](https://hermes-agent.nousresearch.com/docs/user-guide/security) for the full pattern list.
+
+[Back to top](#table-of-contents)
+
+#### Tirith Pre-Exec Scanning
+
+[Tirith](https://github.com/sheeki03/tirith) scans every command before execution, catching threats that pattern matching alone misses:
+
+- **Homograph URL spoofing** — internationalized domain attacks (e.g., `gооgle.com` with Cyrillic "o")
+- **Pipe-to-interpreter** — `curl | bash`, `wget | sh` and variants
+- **Terminal injection** — escape sequence attacks
+
+Configured with `fail_open: false` — if Tirith is unavailable, commands are **blocked** (fail-closed):
+
+```yaml
+security:
+  tirith:
+    enabled: true
+    fail_open: false
+```
+
+[Back to top](#table-of-contents)
+
+#### SSRF Protection (Built-in)
+
+Hermes automatically blocks all URL-capable tools (web search, browser, vision) from accessing:
+
+- Private networks (RFC 1918): `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
+- Loopback: `127.0.0.0/8`, `::1`
+- Link-local / cloud metadata: `169.254.0.0/16` (includes `169.254.169.254`)
+- CGNAT: `100.64.0.0/10`
+- Cloud metadata hostnames: `metadata.google.internal`, `metadata.goog`
+
+This is always active and cannot be disabled. DNS failures are fail-closed.
+
+[Back to top](#table-of-contents)
+
+#### GCP Metadata Endpoint Blocklist
+
+In addition to the built-in SSRF protection, a website blocklist explicitly blocks GCP metadata endpoints:
+
+```yaml
+security:
+  website_blocklist:
+    enabled: true
+    domains:
+      - "metadata.google.internal"
+      - "metadata.goog"
+      - "169.254.169.254"
+      - "*.internal"
+```
+
+This provides defense-in-depth against metadata exfiltration — even if a future code path bypasses the SSRF filter, the blocklist catches it.
+
+[Back to top](#table-of-contents)
+
+#### Context File Injection Protection (Built-in)
+
+Hermes automatically scans context files (AGENTS.md, .cursorrules, SOUL.md) for prompt injection before including them in the system prompt. The scanner detects:
+
+- Instructions to ignore/disregard prior instructions
+- Hidden HTML comments with suspicious keywords
+- Attempts to read secrets (`.env`, `credentials`, `.netrc`)
+- Credential exfiltration via `curl`
+- Invisible Unicode characters (zero-width spaces, bidirectional overrides)
+
+Blocked files are excluded with a warning and never reach the model.
+
+[Back to top](#table-of-contents)
+
+#### Workspace Directory Restriction
+
+The `MESSAGING_CWD` environment variable restricts the gateway agent to `/opt/data/workspace`. The agent cannot operate from sensitive directories like `/etc` or `/opt/hermes`.
+
+[Back to top](#table-of-contents)
+
+#### User Authorization for Messaging Channels
+
+> **Important:** When adding messaging channels (Telegram, LINE, etc.), you **must** configure platform-specific user allowlists. Without allowlists, all users are denied by default (fail-closed).
+
+```bash
+# Example: restrict Telegram to specific user IDs
+TELEGRAM_ALLOWED_USERS=123456789,987654321
+```
+
+Never set `GATEWAY_ALLOW_ALL_USERS=true` in production. Use the DM pairing system for flexible user onboarding — see the [Telegram](#telegram) and [LINE](#line) setup guides.
+
+[Back to top](#table-of-contents)
+
+#### Command Allowlist Audit
+
+Hermes supports a permanent command allowlist (`command_allowlist` in config.yaml) where users can whitelist dangerous command patterns. This allowlist should be:
+
+- **Empty by default** — this deployment ships with no pre-approved patterns
+- **Audited periodically** — review with `hermes config edit` to remove overly broad patterns
+- **Scoped narrowly** — approve specific commands, not entire categories
+
+[Back to top](#table-of-contents)
+
+### Security Summary
+
+| Layer | Control | Type |
+|-------|---------|------|
+| Infrastructure | gVisor sandbox (GKE Autopilot) | Automatic |
+| Infrastructure | Per-developer pod + PVC isolation | Automatic |
+| Network | Private nodes, deny-all ingress, Cloud NAT | Automatic |
+| Network | Master authorized networks | Configured |
+| Identity | Workload Identity (zero API keys) | Automatic |
+| Identity | IAM least privilege (4 roles) | Automatic |
+| Identity | Per-secret IAM binding | Automatic |
+| Application | Dangerous command approval (`manual` mode) | Configured |
+| Application | Tirith pre-exec scanning (`fail_open: false`) | Configured |
+| Application | SSRF protection | Built-in |
+| Application | GCP metadata blocklist | Configured |
+| Application | Context file injection scanning | Built-in |
+| Application | Workspace directory restriction (`MESSAGING_CWD`) | Configured |
+| Application | User authorization (fail-closed deny-all) | Default |
 
 [Back to top](#table-of-contents)
 

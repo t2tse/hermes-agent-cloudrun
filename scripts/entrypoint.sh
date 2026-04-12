@@ -23,8 +23,10 @@ fi
 # ── Render .env file ────────────────────────────────────────────────────────
 # OPENAI_API_KEY is set to a placeholder so Hermes skips the first-run setup
 # wizard. The actual auth is handled by the Vertex AI proxy via ADC.
-cat > "$HERMES_HOME/.env" << 'EOF'
+# MESSAGING_CWD restricts the agent to the workspace directory only.
+cat > "$HERMES_HOME/.env" << EOF
 OPENAI_API_KEY=not-needed-proxy-handles-auth
+MESSAGING_CWD=$HERMES_HOME/workspace
 EOF
 
 # ── Start Vertex AI proxy (background) ──────────────────────────────────────
