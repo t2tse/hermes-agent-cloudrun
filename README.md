@@ -480,35 +480,29 @@ gcloud secrets add-iam-policy-binding hermes-telegram-token \
 
 Exec into the pod and use the Hermes CLI to configure Telegram. The `.env` and `config.yaml` persist on the PVC across restarts.
 
-Open a shell inside the pod:
+Fetch the bot token from Secret Manager and inject it into the pod's `.env` file:
 
 ```bash
-kubectl exec -it -n hermes deploy/hermes-agent-alice -- bash
-```
-
-Add your Telegram bot token to the environment file:
-
-```bash
-echo 'TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN' >> /opt/data/.env
+BOT_TOKEN=$(gcloud secrets versions access latest --secret=hermes-telegram-token --project=$PROJECT_ID)
+kubectl exec -n hermes deploy/hermes-agent-alice -- \
+  bash -c "echo 'TELEGRAM_BOT_TOKEN=$BOT_TOKEN' >> /opt/data/.env"
 ```
 
 Add your Telegram user ID(s) to restrict access (comma-separated):
 
 ```bash
-echo 'TELEGRAM_ALLOWED_USERS=YOUR_TELEGRAM_USER_ID' >> /opt/data/.env
+kubectl exec -n hermes deploy/hermes-agent-alice -- \
+  bash -c "echo 'TELEGRAM_ALLOWED_USERS=YOUR_TELEGRAM_USER_ID' >> /opt/data/.env"
 ```
 
 Enable Telegram in the Hermes config:
 
 ```bash
-hermes config set messaging.telegram.enabled true
+kubectl exec -n hermes deploy/hermes-agent-alice -- \
+  hermes config set messaging.telegram.enabled true
 ```
 
-Exit the pod and restart the gateway:
-
-```bash
-exit
-```
+Restart the gateway to pick up changes:
 
 ```bash
 kubectl rollout restart deploy/hermes-agent-alice -n hermes
@@ -582,35 +576,28 @@ LINE requires a public HTTPS webhook URL. Options:
 
 #### 5. Configure Hermes Inside the Pod
 
-Open a shell inside the pod:
+Fetch credentials from Secret Manager and inject into the pod's `.env` file:
 
 ```bash
-kubectl exec -it -n hermes deploy/hermes-agent-alice -- bash
+LINE_TOKEN=$(gcloud secrets versions access latest --secret=hermes-line-token --project=$PROJECT_ID)
+kubectl exec -n hermes deploy/hermes-agent-alice -- \
+  bash -c "echo 'LINE_CHANNEL_ACCESS_TOKEN=$LINE_TOKEN' >> /opt/data/.env"
 ```
 
-Add your LINE channel access token:
-
 ```bash
-echo 'LINE_CHANNEL_ACCESS_TOKEN=YOUR_CHANNEL_ACCESS_TOKEN' >> /opt/data/.env
-```
-
-Add your LINE channel secret:
-
-```bash
-echo 'LINE_CHANNEL_SECRET=YOUR_CHANNEL_SECRET' >> /opt/data/.env
+LINE_SECRET=$(gcloud secrets versions access latest --secret=hermes-line-secret --project=$PROJECT_ID)
+kubectl exec -n hermes deploy/hermes-agent-alice -- \
+  bash -c "echo 'LINE_CHANNEL_SECRET=$LINE_SECRET' >> /opt/data/.env"
 ```
 
 Enable LINE in the Hermes config:
 
 ```bash
-hermes config set messaging.line.enabled true
+kubectl exec -n hermes deploy/hermes-agent-alice -- \
+  hermes config set messaging.line.enabled true
 ```
 
-Exit the pod and restart the gateway:
-
-```bash
-exit
-```
+Restart the gateway to pick up changes:
 
 ```bash
 kubectl rollout restart deploy/hermes-agent-alice -n hermes
