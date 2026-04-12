@@ -490,21 +490,34 @@ kubectl create secret generic hermes-telegram \
 
 #### 5. Inject the Secret into the Deployment
 
-Add the bot token (from K8s secret) and allowed user IDs as environment variables:
+Add the bot token (from K8s secret) and allowed user IDs as environment variables. The deployment uses a `Recreate` strategy with a `ReadWriteOnce` PVC, so we scale down first to avoid Multi-Attach errors:
+
+```bash
+kubectl scale deploy hermes-agent-alice -n hermes --replicas=0
+```
+
+```bash
+kubectl set env deploy/hermes-agent-alice -n hermes \
+  TELEGRAM_ALLOWED_USERS=YOUR_TELEGRAM_USER_ID
+```
 
 ```bash
 kubectl patch deploy hermes-agent-alice -n hermes --type=json -p='[
   {"op":"add","path":"/spec/template/spec/containers/0/env/-",
-   "value":{"name":"TELEGRAM_BOT_TOKEN","valueFrom":{"secretKeyRef":{"name":"hermes-telegram","key":"bot-token"}}}},
-  {"op":"add","path":"/spec/template/spec/containers/0/env/-",
-   "value":{"name":"TELEGRAM_ALLOWED_USERS","value":"YOUR_TELEGRAM_USER_ID"}}
+   "value":{"name":"TELEGRAM_BOT_TOKEN","valueFrom":{"secretKeyRef":{"name":"hermes-telegram","key":"bot-token"}}}}
 ]'
 ```
 
-The pod will automatically restart. Wait for it to be ready:
+Scale back up:
 
 ```bash
-kubectl wait --for=condition=ready pod -n hermes -l developer=alice --timeout=120s
+kubectl scale deploy hermes-agent-alice -n hermes --replicas=1
+```
+
+Wait for the pod to be ready:
+
+```bash
+kubectl wait --for=condition=ready pod -n hermes -l developer=alice --timeout=180s
 ```
 
 #### 6. Enable Telegram in Hermes Config
@@ -600,6 +613,12 @@ kubectl create secret generic hermes-line \
 
 #### 6. Inject the Secret into the Deployment
 
+Scale down first to avoid PVC Multi-Attach errors:
+
+```bash
+kubectl scale deploy hermes-agent-alice -n hermes --replicas=0
+```
+
 ```bash
 kubectl patch deploy hermes-agent-alice -n hermes --type=json -p='[
   {"op":"add","path":"/spec/template/spec/containers/0/env/-",
@@ -609,10 +628,16 @@ kubectl patch deploy hermes-agent-alice -n hermes --type=json -p='[
 ]'
 ```
 
-Wait for the pod to restart:
+Scale back up:
 
 ```bash
-kubectl wait --for=condition=ready pod -n hermes -l developer=alice --timeout=120s
+kubectl scale deploy hermes-agent-alice -n hermes --replicas=1
+```
+
+Wait for the pod to be ready:
+
+```bash
+kubectl wait --for=condition=ready pod -n hermes -l developer=alice --timeout=180s
 ```
 
 #### 7. Enable LINE in Hermes Config
