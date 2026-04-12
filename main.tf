@@ -55,6 +55,10 @@ provider "kubernetes" {
 
 # Refresh kubeconfig after cluster is created
 resource "null_resource" "kubeconfig" {
+  triggers = {
+    cluster_endpoint = google_container_cluster.primary.endpoint
+  }
+
   depends_on = [google_container_cluster.primary]
 
   provisioner "local-exec" {

@@ -29,6 +29,18 @@ resource "google_artifact_registry_repository" "hermes" {
   depends_on = [google_project_service.apis["artifactregistry.googleapis.com"]]
 }
 
+# Wait for Cloud Build IAM grants to propagate before building
+resource "time_sleep" "wait_for_cloudbuild_iam" {
+  create_duration = "30s"
+
+  depends_on = [
+    google_project_iam_member.cloudbuild_builder,
+    google_project_iam_member.cloudbuild_ar_writer,
+    google_project_iam_member.cloudbuild_storage,
+    google_project_iam_member.cloudbuild_logging,
+  ]
+}
+
 # Build and push Hermes container image via Cloud Build
 resource "null_resource" "build_hermes_image" {
   triggers = {
@@ -48,10 +60,7 @@ resource "null_resource" "build_hermes_image" {
 
   depends_on = [
     google_artifact_registry_repository.hermes,
-    google_project_iam_member.cloudbuild_builder,
-    google_project_iam_member.cloudbuild_ar_writer,
-    google_project_iam_member.cloudbuild_storage,
-    google_project_iam_member.cloudbuild_logging,
+    time_sleep.wait_for_cloudbuild_iam,
   ]
 }
 
