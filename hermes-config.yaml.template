@@ -3,11 +3,10 @@
 # which handles ADC/Workload Identity token injection.
 
 model:
-  default: "custom:vertex-ai:${HERMES_DEFAULT_MODEL}"
-
-custom_providers:
-  - name: "vertex-ai"
-    base_url: "http://127.0.0.1:8081/v1"
+  provider: "custom"
+  default: "${HERMES_DEFAULT_MODEL}"
+  base_url: "http://127.0.0.1:8081/v1"
+  api_key: "not-needed-proxy-handles-auth"
 
 terminal:
   backend: "local"

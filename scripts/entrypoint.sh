@@ -8,17 +8,23 @@ for dir in cron sessions logs hooks memories skills skins plans workspace home; 
   mkdir -p "$HERMES_HOME/$dir"
 done
 
-# ── Render config.yaml from template ────────────────────────────────────────
+# ── Render config.yaml from template (only on first run) ────────────────────
 export HERMES_DEFAULT_MODEL="${HERMES_DEFAULT_MODEL:-gemini-2.5-pro-preview-06-05}"
 
-envsubst '$HERMES_DEFAULT_MODEL' \
-  < /opt/hermes/config.yaml.template \
-  > "$HERMES_HOME/config.yaml"
+if [ ! -f "$HERMES_HOME/config.yaml" ]; then
+  echo "[entrypoint] Rendering config.yaml from template..."
+  envsubst '$HERMES_DEFAULT_MODEL' \
+    < /opt/hermes/config.yaml.template \
+    > "$HERMES_HOME/config.yaml"
+else
+  echo "[entrypoint] Using existing config.yaml"
+fi
 
 # ── Render .env file ────────────────────────────────────────────────────────
-# No API keys needed -- Vertex AI proxy handles auth via ADC/Workload Identity
+# OPENAI_API_KEY is set to a placeholder so Hermes skips the first-run setup
+# wizard. The actual auth is handled by the Vertex AI proxy via ADC.
 cat > "$HERMES_HOME/.env" << 'EOF'
-# Vertex AI proxy handles authentication -- no API keys required
+OPENAI_API_KEY=not-needed-proxy-handles-auth
 EOF
 
 # ── Start Vertex AI proxy (background) ──────────────────────────────────────
