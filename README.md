@@ -476,41 +476,54 @@ gcloud secrets add-iam-policy-binding hermes-telegram-token \
   --role="roles/secretmanager.secretAccessor"
 ```
 
-#### 4. Configure Hermes Inside the Pod
+#### 4. Create a Kubernetes Secret from Secret Manager
 
-Exec into the pod and use the Hermes CLI to configure Telegram. The `.env` and `config.yaml` persist on the PVC across restarts.
-
-Fetch the bot token from Secret Manager and inject it into the pod's `.env` file:
+Fetch the token from Secret Manager and create a K8s secret. This keeps the token in container environment variables (process memory) rather than on disk, protecting it from indirect prompt injection via Hermes file tools.
 
 ```bash
 BOT_TOKEN=$(gcloud secrets versions access latest --secret=hermes-telegram-token --project=$PROJECT_ID)
-kubectl exec -n hermes deploy/hermes-agent-alice -- \
-  bash -c "echo 'TELEGRAM_BOT_TOKEN=$BOT_TOKEN' >> /opt/data/.env"
+kubectl create secret generic hermes-telegram \
+  -n hermes \
+  --from-literal=bot-token="$BOT_TOKEN" \
+  --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-Add your Telegram user ID(s) to restrict access (comma-separated):
+#### 5. Add Environment Variables to the Deployment
 
-```bash
-kubectl exec -n hermes deploy/hermes-agent-alice -- \
-  bash -c "echo 'TELEGRAM_ALLOWED_USERS=YOUR_TELEGRAM_USER_ID' >> /opt/data/.env"
+Add these `env` blocks to the container spec in `kubernetes.tf` (inside the `kubernetes_deployment` resource):
+
+```hcl
+env {
+  name = "TELEGRAM_BOT_TOKEN"
+  value_from {
+    secret_key_ref {
+      name = "hermes-telegram"
+      key  = "bot-token"
+    }
+  }
+}
+env {
+  name  = "TELEGRAM_ALLOWED_USERS"
+  value = "YOUR_TELEGRAM_USER_ID"  # Comma-separated user IDs
+}
 ```
 
-Enable Telegram in the Hermes config:
+#### 6. Enable Telegram in Hermes Config
 
 ```bash
 kubectl exec -n hermes deploy/hermes-agent-alice -- \
   hermes config set messaging.telegram.enabled true
 ```
 
-Restart the gateway to pick up changes:
+#### 7. Redeploy
 
 ```bash
-kubectl rollout restart deploy/hermes-agent-alice -n hermes
+terraform apply
 ```
 
-> **Security:** `TELEGRAM_ALLOWED_USERS` is a comma-separated list of Telegram user IDs that are authorized to interact with the bot. Without this, anyone who discovers the bot can use it.
+> **Security:** Bot tokens are injected as environment variables from K8s secrets — they never touch the filesystem, so Hermes file tools cannot read them even under indirect prompt injection. `TELEGRAM_ALLOWED_USERS` restricts which Telegram user IDs can interact with the bot.
 
-#### 5. Test
+#### 8. Test
 
 Send a message to your bot on Telegram. You should receive a response from Hermes.
 
@@ -574,36 +587,57 @@ LINE requires a public HTTPS webhook URL. Options:
   # Use the ngrok HTTPS URL as your LINE webhook
   ```
 
-#### 5. Configure Hermes Inside the Pod
-
-Fetch credentials from Secret Manager and inject into the pod's `.env` file:
+#### 5. Create a Kubernetes Secret from Secret Manager
 
 ```bash
 LINE_TOKEN=$(gcloud secrets versions access latest --secret=hermes-line-token --project=$PROJECT_ID)
-kubectl exec -n hermes deploy/hermes-agent-alice -- \
-  bash -c "echo 'LINE_CHANNEL_ACCESS_TOKEN=$LINE_TOKEN' >> /opt/data/.env"
-```
-
-```bash
 LINE_SECRET=$(gcloud secrets versions access latest --secret=hermes-line-secret --project=$PROJECT_ID)
-kubectl exec -n hermes deploy/hermes-agent-alice -- \
-  bash -c "echo 'LINE_CHANNEL_SECRET=$LINE_SECRET' >> /opt/data/.env"
+kubectl create secret generic hermes-line \
+  -n hermes \
+  --from-literal=access-token="$LINE_TOKEN" \
+  --from-literal=channel-secret="$LINE_SECRET" \
+  --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-Enable LINE in the Hermes config:
+#### 6. Add Environment Variables to the Deployment
+
+Add these `env` blocks to the container spec in `kubernetes.tf`:
+
+```hcl
+env {
+  name = "LINE_CHANNEL_ACCESS_TOKEN"
+  value_from {
+    secret_key_ref {
+      name = "hermes-line"
+      key  = "access-token"
+    }
+  }
+}
+env {
+  name = "LINE_CHANNEL_SECRET"
+  value_from {
+    secret_key_ref {
+      name = "hermes-line"
+      key  = "channel-secret"
+    }
+  }
+}
+```
+
+#### 7. Enable LINE in Hermes Config
 
 ```bash
 kubectl exec -n hermes deploy/hermes-agent-alice -- \
   hermes config set messaging.line.enabled true
 ```
 
-Restart the gateway to pick up changes:
+#### 8. Redeploy
 
 ```bash
-kubectl rollout restart deploy/hermes-agent-alice -n hermes
+terraform apply
 ```
 
-#### 6. Set the Webhook URL in LINE Console
+#### 9. Set the Webhook URL in LINE Console
 
 Go back to the LINE Developers Console → your channel → **Messaging API** → **Webhook URL**:
 
@@ -613,7 +647,7 @@ https://YOUR_DOMAIN/line/webhook
 
 Click **Verify** to confirm connectivity.
 
-#### 7. Test
+#### 10. Test
 
 Send a message to your LINE bot. You should receive a response from Hermes.
 
