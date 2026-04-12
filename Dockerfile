@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir uv
 
 # Clone and install Hermes Agent from source
-RUN git clone https://github.com/nousresearch/hermes-agent.git /tmp/hermes-agent \
+RUN git clone --branch v2026.4.8 --depth 1 https://github.com/nousresearch/hermes-agent.git /tmp/hermes-agent \
     && cd /tmp/hermes-agent \
     && uv pip install --system -e ".[messaging,cron,cli,pty,mcp,honcho]" \
     && rm -rf /tmp/hermes-agent/.git
