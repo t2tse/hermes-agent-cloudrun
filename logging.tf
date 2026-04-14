@@ -296,6 +296,185 @@ resource "google_monitoring_dashboard" "hermes" {
               EOT
             }
           }
+        },
+        # ── Resource Monitoring ──────────────────────────────────
+        {
+          xPos   = 0
+          yPos   = 12
+          width  = 12
+          height = 2
+          widget = {
+            title = "Resource Monitoring"
+            text = {
+              content = ""
+              format  = "RAW"
+            }
+          }
+        },
+        {
+          xPos   = 0
+          yPos   = 14
+          width  = 6
+          height = 4
+          widget = {
+            title = "Pod CPU Usage"
+            xyChart = {
+              dataSets = [{
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "resource.type = \"k8s_container\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/container/cpu/core_usage_time\""
+                    aggregation = {
+                      alignmentPeriod    = "60s"
+                      perSeriesAligner   = "ALIGN_RATE"
+                      crossSeriesReducer = "REDUCE_NONE"
+                    }
+                  }
+                }
+                plotType = "LINE"
+              }]
+              yAxis = { scale = "LINEAR", label = "cores" }
+            }
+          }
+        },
+        {
+          xPos   = 6
+          yPos   = 14
+          width  = 6
+          height = 4
+          widget = {
+            title = "Pod Memory Usage"
+            xyChart = {
+              dataSets = [{
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "resource.type = \"k8s_container\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/container/memory/used_bytes\""
+                    aggregation = {
+                      alignmentPeriod    = "60s"
+                      perSeriesAligner   = "ALIGN_MEAN"
+                      crossSeriesReducer = "REDUCE_NONE"
+                    }
+                  }
+                }
+                plotType = "LINE"
+              }]
+              yAxis = { scale = "LINEAR", label = "bytes" }
+            }
+          }
+        },
+        {
+          xPos   = 0
+          yPos   = 18
+          width  = 6
+          height = 4
+          widget = {
+            title = "Pod Restart Count"
+            xyChart = {
+              dataSets = [{
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "resource.type = \"k8s_container\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/container/restart_count\""
+                    aggregation = {
+                      alignmentPeriod    = "60s"
+                      perSeriesAligner   = "ALIGN_MAX"
+                      crossSeriesReducer = "REDUCE_NONE"
+                    }
+                  }
+                }
+                plotType = "LINE"
+              }]
+              yAxis = { scale = "LINEAR" }
+            }
+          }
+        },
+        {
+          xPos   = 6
+          yPos   = 18
+          width  = 6
+          height = 4
+          widget = {
+            title = "PVC Disk Usage"
+            xyChart = {
+              dataSets = [{
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "resource.type = \"k8s_pod\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/pod/volume/used_bytes\""
+                    aggregation = {
+                      alignmentPeriod    = "60s"
+                      perSeriesAligner   = "ALIGN_MEAN"
+                      crossSeriesReducer = "REDUCE_NONE"
+                    }
+                  }
+                }
+                plotType = "LINE"
+              }]
+              yAxis = { scale = "LINEAR", label = "bytes" }
+            }
+          }
+        },
+        {
+          xPos   = 0
+          yPos   = 22
+          width  = 6
+          height = 4
+          widget = {
+            title = "PVC Disk Capacity"
+            xyChart = {
+              dataSets = [
+                {
+                  timeSeriesQuery = {
+                    timeSeriesFilter = {
+                      filter = "resource.type = \"k8s_pod\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/pod/volume/total_bytes\""
+                      aggregation = {
+                        alignmentPeriod    = "60s"
+                        perSeriesAligner   = "ALIGN_MEAN"
+                        crossSeriesReducer = "REDUCE_NONE"
+                      }
+                    }
+                  }
+                  plotType = "LINE"
+                },
+                {
+                  timeSeriesQuery = {
+                    timeSeriesFilter = {
+                      filter = "resource.type = \"k8s_pod\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/pod/volume/used_bytes\""
+                      aggregation = {
+                        alignmentPeriod    = "60s"
+                        perSeriesAligner   = "ALIGN_MEAN"
+                        crossSeriesReducer = "REDUCE_NONE"
+                      }
+                    }
+                  }
+                  plotType = "LINE"
+                }
+              ]
+              yAxis = { scale = "LINEAR", label = "bytes" }
+            }
+          }
+        },
+        {
+          xPos   = 6
+          yPos   = 22
+          width  = 6
+          height = 4
+          widget = {
+            title = "Network - Bytes Received"
+            xyChart = {
+              dataSets = [{
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "resource.type = \"k8s_pod\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/pod/network/received_bytes_count\""
+                    aggregation = {
+                      alignmentPeriod    = "60s"
+                      perSeriesAligner   = "ALIGN_RATE"
+                      crossSeriesReducer = "REDUCE_NONE"
+                    }
+                  }
+                }
+                plotType = "LINE"
+              }]
+              yAxis = { scale = "LINEAR", label = "bytes/s" }
+            }
+          }
         }
       ]
     }
