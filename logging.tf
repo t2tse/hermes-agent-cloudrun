@@ -375,7 +375,7 @@ resource "google_monitoring_dashboard" "hermes" {
                     filter = "resource.type = \"k8s_container\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/container/restart_count\""
                     aggregation = {
                       alignmentPeriod    = "60s"
-                      perSeriesAligner   = "ALIGN_MAX"
+                      perSeriesAligner   = "ALIGN_DELTA"
                       crossSeriesReducer = "REDUCE_NONE"
                     }
                   }
