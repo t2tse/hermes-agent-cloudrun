@@ -21,7 +21,9 @@ import httpx
 import google.auth
 import google.auth.transport.requests
 
-logging.basicConfig(level=logging.INFO, format="[vertex-proxy] %(message)s")
+logging.basicConfig(level=logging.INFO, format="[vertex-proxy] %(message)s", stream=sys.stdout)
+# Redirect httpx logs to stdout too (GKE treats stderr as severity=ERROR)
+logging.getLogger("httpx").handlers = logging.getLogger().handlers
 log = logging.getLogger(__name__)
 
 PROJECT = os.environ.get("VERTEX_PROJECT", "")
