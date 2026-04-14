@@ -228,7 +228,7 @@ resource "google_monitoring_dashboard" "hermes" {
               filter = <<-EOT
                 resource.type="k8s_container"
                 resource.labels.namespace_name="hermes"
-                textPayload=~"\\[vertex-proxy\\]"
+                textPayload=~"\[vertex-proxy\]"
               EOT
             }
           }
