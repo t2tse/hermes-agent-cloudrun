@@ -310,7 +310,7 @@ resource "google_monitoring_dashboard" "hermes" {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name =~ \"hermes-agent-run-.*\" AND metric.type = \"run.googleapis.com/container/cpu/utilizations\""
+                    filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = monitoring.regex.full_match(\"hermes-agent-run-.*\") AND metric.type = \"run.googleapis.com/container/cpu/utilizations\""
                     aggregation = {
                       alignmentPeriod    = "60s"
                       perSeriesAligner   = "ALIGN_PERCENTILE_99"
@@ -335,7 +335,7 @@ resource "google_monitoring_dashboard" "hermes" {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name =~ \"hermes-agent-run-.*\" AND metric.type = \"run.googleapis.com/container/memory/utilizations\""
+                    filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = monitoring.regex.full_match(\"hermes-agent-run-.*\") AND metric.type = \"run.googleapis.com/container/memory/utilizations\""
                     aggregation = {
                       alignmentPeriod    = "60s"
                       perSeriesAligner   = "ALIGN_PERCENTILE_99"
@@ -360,7 +360,7 @@ resource "google_monitoring_dashboard" "hermes" {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name =~ \"hermes-agent-run-.*\" AND metric.type = \"run.googleapis.com/request_count\""
+                    filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = monitoring.regex.full_match(\"hermes-agent-run-.*\") AND metric.type = \"run.googleapis.com/request_count\""
                     aggregation = {
                       alignmentPeriod    = "60s"
                       perSeriesAligner   = "ALIGN_SUM"
@@ -385,7 +385,7 @@ resource "google_monitoring_dashboard" "hermes" {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name =~ \"hermes-agent-run-.*\" AND metric.type = \"run.googleapis.com/container/instance_count\""
+                    filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = monitoring.regex.full_match(\"hermes-agent-run-.*\") AND metric.type = \"run.googleapis.com/container/instance_count\""
                     aggregation = {
                       alignmentPeriod    = "60s"
                       perSeriesAligner   = "ALIGN_MEAN"
