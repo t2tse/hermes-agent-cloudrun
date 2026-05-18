@@ -64,8 +64,24 @@ resource "null_resource" "build_hermes_image" {
   ]
 }
 
-# Secret Manager Secrets
+# GCS Workspace Buckets (one per developer)
+# Cloud Run gen2 (execution_environment = "gen2") is required for GCS FUSE.
+resource "google_storage_bucket" "hermes_workspace" {
+  for_each = var.developers
 
+  name          = "${var.project_id}-hermes-workspace-${each.key}"
+  location      = var.region
+  project       = var.project_id
+  force_destroy = false
+
+  uniform_bucket_level_access = true
+
+  labels = merge(var.labels, { developer = each.key })
+
+  depends_on = [google_project_service.apis["storage.googleapis.com"]]
+}
+
+# Secret Manager
 resource "google_secret_manager_secret" "gateway_token" {
   secret_id = "hermes-gateway-token"
   project   = var.project_id

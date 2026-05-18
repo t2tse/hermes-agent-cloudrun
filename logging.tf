@@ -30,15 +30,15 @@ resource "google_monitoring_notification_channel" "hermes_email" {
 # Log-Based Alerts
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Alert: Hermes pod crash / restart
+# Alert: Hermes container crash / restart
 resource "google_logging_metric" "hermes_crash" {
-  name    = "hermes/pod_restart"
+  name    = "hermes/container_restart"
   project = var.project_id
   filter  = <<-EOT
-    resource.type="k8s_container"
-    resource.labels.namespace_name="hermes"
-    resource.labels.container_name="hermes"
-    jsonPayload.reason="BackOff" OR textPayload=~"CrashLoopBackOff"
+    resource.type="cloud_run_revision"
+    resource.labels.service_name=~"hermes-agent-.*"
+    severity>="ERROR"
+    textPayload=~"process exited|container.*exit|SIGKILL|unhandledRejection"
   EOT
 
   metric_descriptor {
@@ -50,15 +50,15 @@ resource "google_logging_metric" "hermes_crash" {
 resource "google_monitoring_alert_policy" "hermes_crash" {
   count = var.alert_email != "" ? 1 : 0
 
-  display_name = "Hermes Agent: Pod CrashLoop"
+  display_name = "Hermes Agent: Container Crash"
   project      = var.project_id
   combiner     = "OR"
 
   conditions {
-    display_name = "Hermes pod in CrashLoopBackOff"
+    display_name = "Hermes container exiting repeatedly"
 
     condition_threshold {
-      filter          = "resource.type = \"k8s_container\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.hermes_crash.name}\""
+      filter          = "resource.type = \"cloud_run_revision\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.hermes_crash.name}\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
@@ -77,7 +77,7 @@ resource "google_monitoring_alert_policy" "hermes_crash" {
   }
 
   documentation {
-    content   = "A Hermes Agent pod is crash-looping. Check `kubectl logs -n hermes` for details. Common causes: Vertex AI proxy connection issues, config errors, or OOM."
+    content   = "A Hermes Agent container is crashing. Check logs with: gcloud logging read 'resource.type=\"cloud_run_revision\" AND resource.labels.service_name=~\"hermes-agent-.*\"' --project=PROJECT_ID --limit=50. Common causes: Vertex AI proxy connection issues, config errors, or OOM."
     mime_type = "text/markdown"
   }
 
@@ -89,8 +89,8 @@ resource "google_logging_metric" "vertex_proxy_error" {
   name    = "hermes/vertex_proxy_error"
   project = var.project_id
   filter  = <<-EOT
-    resource.type="k8s_container"
-    resource.labels.namespace_name="hermes"
+    resource.type="cloud_run_revision"
+    resource.labels.service_name=~"hermes-agent-.*"
     textPayload=~"vertex-proxy.*error"
   EOT
 
@@ -111,7 +111,7 @@ resource "google_monitoring_alert_policy" "vertex_proxy_error" {
     display_name = "High rate of Vertex AI proxy errors"
 
     condition_threshold {
-      filter          = "resource.type = \"k8s_container\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.vertex_proxy_error.name}\""
+      filter          = "resource.type = \"cloud_run_revision\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.vertex_proxy_error.name}\""
       comparison      = "COMPARISON_GT"
       threshold_value = 10
       duration        = "300s"
@@ -130,7 +130,7 @@ resource "google_monitoring_alert_policy" "vertex_proxy_error" {
   }
 
   documentation {
-    content   = "High rate of Vertex AI proxy errors. Check Workload Identity binding, IAM permissions (roles/aiplatform.user), and Vertex AI API quota."
+    content   = "High rate of Vertex AI proxy errors. Check IAM permissions (roles/aiplatform.user on the developer's SA), ADC availability, and Vertex AI API quota."
     mime_type = "text/markdown"
   }
 
@@ -178,7 +178,7 @@ resource "google_logging_project_sink" "hermes_gcs" {
   destination = "storage.googleapis.com/${google_storage_bucket.hermes_logs.name}"
 
   filter = <<-EOT
-    resource.type="k8s_container" AND resource.labels.namespace_name="hermes"
+    resource.type="cloud_run_revision" AND resource.labels.service_name=~"hermes-agent-.*"
   EOT
 
   unique_writer_identity = true
@@ -209,11 +209,7 @@ resource "google_monitoring_dashboard" "hermes" {
           widget = {
             title = "Hermes Agent Logs (all developers)"
             logsPanel = {
-              filter = <<-EOT
-                resource.type="k8s_container"
-                resource.labels.namespace_name="hermes"
-                resource.labels.container_name="hermes"
-              EOT
+              filter = "resource.type=\"cloud_run_revision\"\nresource.labels.service_name=~\"hermes-agent-.*\""
             }
           }
         },
@@ -225,11 +221,7 @@ resource "google_monitoring_dashboard" "hermes" {
           widget = {
             title = "Vertex AI Proxy Logs"
             logsPanel = {
-              filter = <<-EOT
-                resource.type="k8s_container"
-                resource.labels.namespace_name="hermes"
-                textPayload=~"\[vertex-proxy\]"
-              EOT
+              filter = "resource.type=\"cloud_run_revision\"\nresource.labels.service_name=~\"hermes-agent-.*\"\ntextPayload=~\"\\[vertex-proxy\\]\""
             }
           }
         },
@@ -239,12 +231,12 @@ resource "google_monitoring_dashboard" "hermes" {
           width  = 6
           height = 4
           widget = {
-            title = "Pod Restarts"
+            title = "Container Crash Events"
             xyChart = {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type = \"k8s_container\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.hermes_crash.name}\""
+                    filter = "resource.type = \"cloud_run_revision\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.hermes_crash.name}\""
                     aggregation = {
                       alignmentPeriod  = "300s"
                       perSeriesAligner = "ALIGN_SUM"
@@ -268,7 +260,7 @@ resource "google_monitoring_dashboard" "hermes" {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type = \"k8s_container\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.vertex_proxy_error.name}\""
+                    filter = "resource.type = \"cloud_run_revision\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.vertex_proxy_error.name}\""
                     aggregation = {
                       alignmentPeriod  = "300s"
                       perSeriesAligner = "ALIGN_SUM"
@@ -289,11 +281,7 @@ resource "google_monitoring_dashboard" "hermes" {
           widget = {
             title = "Hermes Errors Only"
             logsPanel = {
-              filter = <<-EOT
-                resource.type="k8s_container"
-                resource.labels.namespace_name="hermes"
-                severity>="ERROR"
-              EOT
+              filter = "resource.type=\"cloud_run_revision\"\nresource.labels.service_name=~\"hermes-agent-.*\"\nseverity>=\"ERROR\""
             }
           }
         },
@@ -317,22 +305,22 @@ resource "google_monitoring_dashboard" "hermes" {
           width  = 6
           height = 4
           widget = {
-            title = "Pod CPU Usage"
+            title = "Cloud Run CPU Utilization"
             xyChart = {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type = \"k8s_container\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/container/cpu/core_usage_time\""
+                    filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name =~ \"hermes-agent-.*\" AND metric.type = \"run.googleapis.com/container/cpu/utilizations\""
                     aggregation = {
                       alignmentPeriod    = "60s"
-                      perSeriesAligner   = "ALIGN_RATE"
+                      perSeriesAligner   = "ALIGN_PERCENTILE_99"
                       crossSeriesReducer = "REDUCE_NONE"
                     }
                   }
                 }
                 plotType = "LINE"
               }]
-              yAxis = { scale = "LINEAR", label = "cores" }
+              yAxis = { scale = "LINEAR", label = "utilization" }
             }
           }
         },
@@ -342,22 +330,22 @@ resource "google_monitoring_dashboard" "hermes" {
           width  = 6
           height = 4
           widget = {
-            title = "Pod Memory Usage"
+            title = "Cloud Run Memory Utilization"
             xyChart = {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type = \"k8s_container\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/container/memory/used_bytes\""
+                    filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name =~ \"hermes-agent-.*\" AND metric.type = \"run.googleapis.com/container/memory/utilizations\""
                     aggregation = {
                       alignmentPeriod    = "60s"
-                      perSeriesAligner   = "ALIGN_MEAN"
+                      perSeriesAligner   = "ALIGN_PERCENTILE_99"
                       crossSeriesReducer = "REDUCE_NONE"
                     }
                   }
                 }
                 plotType = "LINE"
               }]
-              yAxis = { scale = "LINEAR", label = "bytes" }
+              yAxis = { scale = "LINEAR", label = "utilization" }
             }
           }
         },
@@ -367,15 +355,15 @@ resource "google_monitoring_dashboard" "hermes" {
           width  = 6
           height = 4
           widget = {
-            title = "Pod Restart Count"
+            title = "Cloud Run Request Count"
             xyChart = {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type = \"k8s_container\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/container/restart_count\""
+                    filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name =~ \"hermes-agent-.*\" AND metric.type = \"run.googleapis.com/request_count\""
                     aggregation = {
                       alignmentPeriod    = "60s"
-                      perSeriesAligner   = "ALIGN_DELTA"
+                      perSeriesAligner   = "ALIGN_SUM"
                       crossSeriesReducer = "REDUCE_NONE"
                     }
                   }
@@ -392,12 +380,12 @@ resource "google_monitoring_dashboard" "hermes" {
           width  = 6
           height = 4
           widget = {
-            title = "PVC Disk Usage"
+            title = "Cloud Run Instance Count"
             xyChart = {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type = \"k8s_pod\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/pod/volume/used_bytes\""
+                    filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name =~ \"hermes-agent-.*\" AND metric.type = \"run.googleapis.com/container/instance_count\""
                     aggregation = {
                       alignmentPeriod    = "60s"
                       perSeriesAligner   = "ALIGN_MEAN"
@@ -407,72 +395,7 @@ resource "google_monitoring_dashboard" "hermes" {
                 }
                 plotType = "LINE"
               }]
-              yAxis = { scale = "LINEAR", label = "bytes" }
-            }
-          }
-        },
-        {
-          xPos   = 0
-          yPos   = 22
-          width  = 6
-          height = 4
-          widget = {
-            title = "PVC Disk Capacity"
-            xyChart = {
-              dataSets = [
-                {
-                  timeSeriesQuery = {
-                    timeSeriesFilter = {
-                      filter = "resource.type = \"k8s_pod\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/pod/volume/total_bytes\""
-                      aggregation = {
-                        alignmentPeriod    = "60s"
-                        perSeriesAligner   = "ALIGN_MEAN"
-                        crossSeriesReducer = "REDUCE_NONE"
-                      }
-                    }
-                  }
-                  plotType = "LINE"
-                },
-                {
-                  timeSeriesQuery = {
-                    timeSeriesFilter = {
-                      filter = "resource.type = \"k8s_pod\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/pod/volume/used_bytes\""
-                      aggregation = {
-                        alignmentPeriod    = "60s"
-                        perSeriesAligner   = "ALIGN_MEAN"
-                        crossSeriesReducer = "REDUCE_NONE"
-                      }
-                    }
-                  }
-                  plotType = "LINE"
-                }
-              ]
-              yAxis = { scale = "LINEAR", label = "bytes" }
-            }
-          }
-        },
-        {
-          xPos   = 6
-          yPos   = 22
-          width  = 6
-          height = 4
-          widget = {
-            title = "Network - Bytes Received"
-            xyChart = {
-              dataSets = [{
-                timeSeriesQuery = {
-                  timeSeriesFilter = {
-                    filter = "resource.type = \"k8s_pod\" AND resource.labels.namespace_name = \"hermes\" AND metric.type = \"kubernetes.io/pod/network/received_bytes_count\""
-                    aggregation = {
-                      alignmentPeriod    = "60s"
-                      perSeriesAligner   = "ALIGN_RATE"
-                      crossSeriesReducer = "REDUCE_NONE"
-                    }
-                  }
-                }
-                plotType = "LINE"
-              }]
-              yAxis = { scale = "LINEAR", label = "bytes/s" }
+              yAxis = { scale = "LINEAR" }
             }
           }
         }

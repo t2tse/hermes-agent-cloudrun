@@ -1,5 +1,5 @@
 ###############################################################################
-# Hermes Agent on GCP -- Terraform Variables
+# Hermes Agent on Cloud Run -- Terraform Variables
 ###############################################################################
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -12,7 +12,7 @@ variable "project_id" {
 }
 
 variable "region" {
-  description = "GCP region for regional resources."
+  description = "GCP region for regional resources (Cloud Run, Artifact Registry, Secret Manager)."
   type        = string
   default     = "us-central1"
 }
@@ -27,38 +27,31 @@ variable "network_name" {
   default     = "hermes-vpc"
 }
 
-variable "gke_subnet_cidr" {
-  description = "CIDR range for the GKE subnet."
+variable "subnet_cidr" {
+  description = "CIDR range for the Cloud Run Direct VPC Egress subnet."
   type        = string
   default     = "10.10.0.0/24"
 }
 
-variable "master_authorized_cidrs" {
-  description = "Additional CIDR blocks allowed to access the GKE control plane."
-  type        = map(string)
-  default     = {}
-}
-
-variable "gke_pods_cidr" {
-  description = "Secondary CIDR range for GKE Pods."
-  type        = string
-  default     = "10.100.0.0/16"
-}
-
-variable "gke_services_cidr" {
-  description = "Secondary CIDR range for GKE Services."
-  type        = string
-  default     = "10.101.0.0/16"
-}
-
 # ──────────────────────────────────────────────────────────────────────────────
-# GKE
+# Cloud Run
 # ──────────────────────────────────────────────────────────────────────────────
 
-variable "gke_cluster_name" {
-  description = "Name of the GKE Autopilot cluster."
-  type        = string
-  default     = "hermes-cluster"
+variable "execution_environment" {
+  description = <<-EOT
+    Cloud Run execution environment for Hermes Agent services:
+      "gen2" — 2nd generation (MicroVM, seccomp syscall filtering + Sandbox2 Linux namespace
+               isolation; required for GCS FUSE mounts, recommended)
+      "gen1" — 1st generation (gVisor, user-space kernel with syscall interception;
+               does NOT support GCS FUSE)
+  EOT
+  type    = string
+  default = "gen2"
+
+  validation {
+    condition     = contains(["gen1", "gen2"], var.execution_environment)
+    error_message = "execution_environment must be 'gen1' or 'gen2'."
+  }
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -98,37 +91,13 @@ variable "vertex_model_aliases" {
   description = "Map of short model names to Vertex AI model IDs. Hermes uses the short names."
   type        = map(string)
   default = {
-    "gemini-2.5-pro-preview-06-05"  = "gemini-2.5-pro-preview-06-05"
-    "gemini-2.5-flash"              = "gemini-2.5-flash-preview-04-17"
+    "gemini-2.5-pro"   = "gemini-2.5-pro"
+    "gemini-2.5-flash" = "gemini-2.5-flash"
   }
 }
 
-variable "hermes_cpu_request" {
-  description = "CPU request for Hermes pods."
-  type        = string
-  default     = "1"
-}
-
-variable "hermes_memory_request" {
-  description = "Memory request for Hermes pods."
-  type        = string
-  default     = "2Gi"
-}
-
-variable "hermes_cpu_limit" {
-  description = "CPU limit for Hermes pods."
-  type        = string
-  default     = "2"
-}
-
-variable "hermes_memory_limit" {
-  description = "Memory limit for Hermes pods."
-  type        = string
-  default     = "4Gi"
-}
-
 variable "developers" {
-  description = "Map of developer names to their configuration. Each developer gets a dedicated Hermes Agent pod and PVC."
+  description = "Map of developer names to their configuration. Each developer gets a dedicated Cloud Run service, GCS workspace bucket, and service account."
   type = map(object({
     active = bool
   }))

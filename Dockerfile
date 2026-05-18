@@ -40,9 +40,11 @@ COPY hermes-config.yaml.template /opt/hermes/config.yaml.template
 COPY scripts/entrypoint.sh /opt/hermes/entrypoint.sh
 RUN chmod +x /opt/hermes/entrypoint.sh
 
-# Data volume mount point
+# Data directory — Cloud Run mounts the per-developer GCS bucket here via GCS FUSE
 RUN mkdir -p /opt/data
-VOLUME /opt/data
+
+# Cloud Run uses EXPOSE to detect the container port
+EXPOSE 8443
 
 ENV HERMES_HOME=/opt/data
 

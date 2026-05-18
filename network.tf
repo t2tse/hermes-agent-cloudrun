@@ -6,22 +6,13 @@ resource "google_compute_network" "vpc" {
   depends_on = [google_project_service.apis["compute.googleapis.com"]]
 }
 
-resource "google_compute_subnetwork" "gke_subnet" {
-  name                     = "${var.network_name}-gke-subnet"
-  ip_cidr_range            = var.gke_subnet_cidr
+# Primary subnet for Cloud Run Direct VPC Egress
+resource "google_compute_subnetwork" "cloudrun_subnet" {
+  name                     = "${var.network_name}-cloudrun-subnet"
+  ip_cidr_range            = var.subnet_cidr
   region                   = var.region
   network                  = google_compute_network.vpc.id
   private_ip_google_access = true
-
-  secondary_ip_range {
-    range_name    = "gke-pods"
-    ip_cidr_range = var.gke_pods_cidr
-  }
-
-  secondary_ip_range {
-    range_name    = "gke-services"
-    ip_cidr_range = var.gke_services_cidr
-  }
 
   log_config {
     aggregation_interval = "INTERVAL_5_SEC"

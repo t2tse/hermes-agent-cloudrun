@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Hermes Agent on GCP -- Example Variables
+# Hermes Agent on GCP Cloud Run -- Example Variables
 #
 # Copy this file to terraform.tfvars and fill in your values.
 # SECURITY: Never commit terraform.tfvars to version control.
@@ -8,8 +8,8 @@
 # Required -- your GCP project ID
 project_id = "my-project-id"
 
-# Region for GKE cluster and Artifact Registry
-region          = "us-central1"
+# Region for Cloud Run and Artifact Registry
+region = "us-central1"
 
 # Vertex AI endpoint region ("global" recommended for widest model availability)
 vertex_location = "global"
@@ -19,19 +19,20 @@ hermes_default_model = "gemini-2.5-flash"
 
 # Model aliases (short name -> Vertex AI model ID)
 vertex_model_aliases = {
-  "gemini-2.5-flash" = "gemini-2.5-flash"
-  "gemini-2.5-pro"   = "gemini-2.5-pro-preview-06-05"
+  "gemini-2.5-flash"             = "gemini-2.5-flash"
+  "gemini-2.5-pro".              = "gemini-2.5-pro"
 }
 
-# Developers -- each gets a dedicated Hermes Agent pod and 10Gi PVC
+# Developers -- each gets a dedicated Cloud Run service and GCS workspace bucket
 developers = {
   "dev1" = { active = true }
 }
 
-# Master authorized networks (CIDRs allowed to access GKE control plane)
-master_authorized_cidrs = {
-  "My IP" = "YOUR_IP/32"
-}
+# Cloud Run execution environment: "gen2" (recommended, required for GCS FUSE) or "gen1"
+execution_environment = "gen2"
 
 # Monitoring (optional -- leave empty to skip alert creation)
 alert_email = ""
+
+# Deployer SA for IAP tunnel access (optional -- leave empty to skip)
+deployer_service_account = ""

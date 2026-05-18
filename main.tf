@@ -1,6 +1,6 @@
 ###############################################################################
 # Hermes Agent on GCP -- Main Infrastructure
-# GKE Autopilot with gVisor sandboxing, Vertex AI via Workload Identity.
+# Cloud Run, Vertex AI via direct SA credentials (ADC).
 ###############################################################################
 
 terraform {
@@ -11,7 +11,7 @@ terraform {
   #   gsutil versioning set on gs://YOUR_PROJECT-tf-state
   backend "gcs" {
     bucket = "YOUR_PROJECT_ID-tf-state"
-    prefix = "hermes-gke"
+    prefix = "hermes-cloudrun"
   }
 
   required_providers {
@@ -22,14 +22,6 @@ terraform {
     random = {
       source  = "hashicorp/random"
       version = "~> 3.0"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.38"
-    }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~> 4.0"
     }
     time = {
       source  = "hashicorp/time"
@@ -47,25 +39,6 @@ provider "google" {
   region  = var.region
 }
 
-data "google_client_config" "default" {}
-
-provider "kubernetes" {
-  config_path = "~/.kube/config"
-}
-
-# Refresh kubeconfig after cluster is created
-resource "null_resource" "kubeconfig" {
-  triggers = {
-    cluster_endpoint = google_container_cluster.primary.endpoint
-  }
-
-  depends_on = [google_container_cluster.primary]
-
-  provisioner "local-exec" {
-    command = "gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.region} --project ${var.project_id}"
-  }
-}
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Enable Required APIs
 # ──────────────────────────────────────────────────────────────────────────────
@@ -73,7 +46,9 @@ resource "null_resource" "kubeconfig" {
 resource "google_project_service" "apis" {
   for_each = toset([
     "compute.googleapis.com",
-    "container.googleapis.com",
+    "run.googleapis.com",
+    "dns.googleapis.com",
+    "storage.googleapis.com",
     "secretmanager.googleapis.com",
     "artifactregistry.googleapis.com",
     "iap.googleapis.com",

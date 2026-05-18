@@ -2,14 +2,25 @@
 # Hermes Agent on GCP -- Outputs
 ###############################################################################
 
-output "gke_cluster_name" {
-  description = "Name of the GKE Autopilot cluster."
-  value       = google_container_cluster.primary.name
+output "cloudrun_subnet" {
+  description = "Name of the Cloud Run Direct VPC Egress subnet (use in --subnet flag of gcloud run deploy)."
+  value       = google_compute_subnetwork.cloudrun_subnet.name
 }
 
-output "gke_cluster_endpoint" {
-  description = "Endpoint for GKE Autopilot cluster."
-  value       = google_container_cluster.primary.endpoint
+output "workspace_bucket_names" {
+  description = "Map of developer name to their GCS workspace bucket name (used in gcloud run deploy --add-volume)."
+  value = {
+    for dev, _ in var.developers :
+    dev => google_storage_bucket.hermes_workspace[dev].name
+  }
+}
+
+output "brain_service_accounts" {
+  description = "Map of developer name to their Cloud Run service account email (use in --service-account flag of gcloud run deploy)."
+  value = {
+    for dev, _ in var.developers :
+    dev => google_service_account.hermes_agent[dev].email
+  }
 }
 
 output "artifact_registry_url" {
@@ -25,16 +36,4 @@ output "gateway_token_secret" {
 output "cloudbuild_service_account" {
   description = "Cloud Build service account email."
   value       = google_service_account.cloudbuild.email
-}
-
-output "hermes_agent_service_account" {
-  description = "Hermes Agent GCP service account email."
-  value       = google_service_account.hermes_agent.email
-}
-
-output "developer_pods" {
-  description = "Map of developer names to their Hermes pod deployment names."
-  value = {
-    for name, _ in var.developers : name => "hermes-agent-${name}"
-  }
 }
