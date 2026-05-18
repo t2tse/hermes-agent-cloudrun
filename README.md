@@ -446,8 +446,8 @@ for DEVELOPER in alice bob; do
     --set-secrets "GATEWAY_AUTH_TOKEN=hermes-run-gateway-token:latest" \
     --set-env-vars "HERMES_HOME=/opt/data" \
     --set-env-vars "HERMES_DEFAULT_MODEL=gemini-2.5-flash" \
-    --set-env-vars "VERTEX_PROJECT=global" \
-    --set-env-vars "VERTEX_LOCATION=${PROJECT_ID}" \
+    --set-env-vars "VERTEX_LOCATION=global" \
+    --set-env-vars "VERTEX_PROJECT=${PROJECT_ID}" \
     --set-env-vars "VERTEX_PROXY_PORT=8081" \
     --set-env-vars "^##^VERTEX_MODEL_ALIASES={\"gemini-2.5-flash\":\"gemini-2.5-flash\",\"gemini-2.5-pro\":\"gemini-2.5-pro\"}" \
     --labels "developer=${DEVELOPER}"
