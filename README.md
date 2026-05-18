@@ -421,7 +421,7 @@ Deploy one Cloud Run service per developer. Replace variables with your actual v
 ```bash
 export PROJECT_ID="your-project-id"
 export REGION="us-central1"
-export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/hermes-agent/hermes:latest"
+export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/hermes-agent-run/hermes:latest"
 
 # Deploy per-developer services
 for DEVELOPER in alice bob; do
@@ -429,14 +429,14 @@ for DEVELOPER in alice bob; do
   BUCKET=$(terraform output -json workspace_bucket_names | jq -r ".\"${DEVELOPER}\"")
   SUBNET=$(terraform output -raw cloudrun_subnet)
 
-  gcloud run deploy "hermes-agent-run-${DEVELOPER}" \
+  gcloud run deploy "hermes-agent-${DEVELOPER}" \
     --image ${IMAGE} \
     --project ${PROJECT_ID} \
     --region ${REGION} \
     --service-account ${SA} \
     --execution-environment gen2 \
     --no-allow-unauthenticated \
-    --port 8443 \
+    --port 8642 \
     --memory 2Gi --cpu 1 \
     --scaling 1 \
     --network "hermes-run-vpc" \

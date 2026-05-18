@@ -24,9 +24,14 @@ fi
 # OPENAI_API_KEY is set to a placeholder so Hermes skips the first-run setup
 # wizard. The actual auth is handled by the Vertex AI proxy via ADC.
 # MESSAGING_CWD restricts the agent to the workspace directory only.
+# Enable the API server 
 cat > "$HERMES_HOME/.env" << EOF
 OPENAI_API_KEY=not-needed-proxy-handles-auth
 MESSAGING_CWD=$HERMES_HOME/workspace
+API_SERVER_ENABLED=true
+API_SERVER_HOST=0.0.0.0
+API_SERVER_PORT=8642
+API_SERVER_KEY=${GATEWAY_AUTH_TOKEN}
 EOF
 
 # ── Start Vertex AI proxy (background) ──────────────────────────────────────
