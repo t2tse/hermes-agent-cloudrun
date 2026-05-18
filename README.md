@@ -381,19 +381,10 @@ developers = {
 alert_email = "you@example.com"
 ```
 
-Update the backend bucket in `main.tf`:
-
-```hcl
-backend "gcs" {
-  bucket = "your-project-id-tf-state"
-  prefix = "hermes-cloudrun"
-}
-```
-
 ### Step 3: Deploy
 
 ```bash
-terraform init
+terraform init -backend-config="bucket=${PROJECT_ID}-hermes-run-tf-state"
 terraform plan
 terraform apply
 ```
