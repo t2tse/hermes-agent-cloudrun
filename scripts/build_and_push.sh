@@ -3,10 +3,10 @@ set -e
 
 REGION="${REGION:-us-central1}"
 PROJECT_ID="${PROJECT_ID:?Set PROJECT_ID environment variable}"
-REPOSITORY="hermes-agent"
+REPOSITORY="hermes-agent-run"
 IMAGE_NAME="hermes"
 TAG="latest"
-SERVICE_ACCOUNT="hermes-cloudbuild@${PROJECT_ID}.iam.gserviceaccount.com"
+SERVICE_ACCOUNT="hermes-run-cloudbuild@${PROJECT_ID}.iam.gserviceaccount.com"
 
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE_NAME}:${TAG}"
 
