@@ -24,7 +24,7 @@ variable "region" {
 variable "network_name" {
   description = "Name of the VPC network."
   type        = string
-  default     = "hermes-vpc"
+  default     = "hermes-run-vpc"
 }
 
 variable "subnet_cidr" {
