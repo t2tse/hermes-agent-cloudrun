@@ -429,27 +429,28 @@ for DEVELOPER in alice bob; do
   BUCKET=$(terraform output -json workspace_bucket_names | jq -r ".\"${DEVELOPER}\"")
   SUBNET=$(terraform output -raw cloudrun_subnet)
 
-  gcloud run deploy "hermes-agent-${DEVELOPER}" \
-    --image="${IMAGE}" \
-    --project="${PROJECT_ID}" \
-    --region="${REGION}" \
-    --service-account="${SA}" \
-    --execution-environment=gen2 \
+  gcloud run deploy "hermes-agent-run-${DEVELOPER}" \
+    --image ${IMAGE} \
+    --project ${PROJECT_ID} \
+    --region ${REGION} \
+    --service-account ${SA} \
+    --execution-environment gen2 \
     --no-allow-unauthenticated \
-    --port=8443 \
-    --cpu=1 \
-    --memory=2Gi \
-    --scaling=1 \
-    --network="hermes-vpc" \
-    --subnet="${SUBNET}" \
-    --vpc-egress=all-traffic \
-    --add-volume=name=workspace,type=cloud-storage,bucket="${BUCKET}" \
-    --add-volume-mount=volume=workspace,mount-path=/opt/data \
-    --set-secrets="GATEWAY_AUTH_TOKEN=hermes-gateway-token:latest" \
-    --set-env-vars="HERMES_DEFAULT_MODEL=gemini-2.5-flash" \
-    --set-env-vars="VERTEX_LOCATION=global" \
-    --set-env-vars="VERTEX_MODEL_ALIASES={\"gemini-2.5-flash\":\"gemini-2.5-flash\",\"gemini-2.5-pro\":\"gemini-2.5-pro\"}" \
-    --labels="developer=${DEVELOPER}"
+    --port 8443 \
+    --memory 2Gi --cpu 1 \
+    --scaling 1 \
+    --network "hermes-run-vpc" \
+    --subnet ${SUBNET} \
+    --vpc-egress all-traffic \
+    --add-volume "mount-path=/opt/data,type=cloud-storage,bucket=${BUCKET}" \
+    --set-secrets "GATEWAY_AUTH_TOKEN=hermes-run-gateway-token:latest" \
+    --set-env-vars "HERMES_HOME=/opt/data" \
+    --set-env-vars "HERMES_DEFAULT_MODEL=gemini-2.5-flash" \
+    --set-env-vars "VERTEX_PROJECT=global" \
+    --set-env-vars "VERTEX_LOCATION=${PROJECT_ID}" \
+    --set-env-vars "VERTEX_PROXY_PORT=8081" \
+    --set-env-vars "^##^VERTEX_MODEL_ALIASES={\"gemini-2.5-flash\":\"gemini-2.5-flash\",\"gemini-2.5-pro\":\"gemini-2.5-pro\"}" \
+    --labels "developer=${DEVELOPER}"
 done
 ```
 
