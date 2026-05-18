@@ -536,7 +536,7 @@ gcloud run services update hermes-agent-alice \
 ```bash
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- hermes config set messaging.telegram.enabled true
+  <<< 'hermes config set messaging.telegram.enabled true'
 ```
 
 Updating the config triggers a new revision automatically.
@@ -552,7 +552,7 @@ Approve the pairing code from inside the container:
 ```bash
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- hermes pairing approve telegram XXXXXXXX
+  <<< 'hermes pairing approve telegram XXXXXXXX'
 ```
 
 Replace `XXXXXXXX` with the code shown in Telegram.
@@ -583,7 +583,7 @@ export REGION="us-central1"
 ```bash
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- curl -s http://127.0.0.1:8081/health
+  <<< 'curl -s http://127.0.0.1:8081/health'
 ```
 
 Expected: `{"status":"ok"}`
@@ -595,7 +595,7 @@ Expected: `{"status":"ok"}`
 ```bash
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- curl -s http://127.0.0.1:8081/v1/models | python3 -m json.tool
+  <<< 'curl -s http://127.0.0.1:8081/v1/models | python3 -m json.tool'
 ```
 
 Expected: JSON listing your configured model aliases.
@@ -607,10 +607,12 @@ Expected: JSON listing your configured model aliases.
 ```bash
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- curl -s http://127.0.0.1:8081/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"What is 2+2?"}],"stream":false}' \
-  | python3 -m json.tool
+<< EOF
+curl -s http://127.0.0.1:8081/v1/chat/completions \
+-H 'Content-Type: application/json' \
+-d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"What is 2+2?"}],"stream":false}' \
+| python3 -m json.tool 
+EOF
 ```
 
 Expected: A JSON response with `choices[0].message.content` containing "4".
@@ -622,9 +624,11 @@ Expected: A JSON response with `choices[0].message.content` containing "4".
 ```bash
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- curl -s http://127.0.0.1:8081/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"Write a haiku about clouds"}],"stream":true}'
+<< EOF
+curl -s http://127.0.0.1:8081/v1/chat/completions \
+-H 'Content-Type: application/json' \
+-d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"Write a haiku about clouds"}],"stream":true}'
+EOF
 ```
 
 Expected: Multiple `data: {...}` lines with `object: "chat.completion.chunk"`, ending with `data: [DONE]`.
@@ -636,7 +640,7 @@ Expected: Multiple `data: {...}` lines with `object: "chat.completion.chunk"`, e
 ```bash
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- hermes doctor
+  <<< 'hermes doctor'
 ```
 
 Expected: Lists available tools (terminal, file operations, git, python, etc.) and confirms the custom provider is configured.
@@ -665,7 +669,9 @@ You can also run a single non-interactive query:
 ```bash
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- bash -c 'cd /opt/data/workspace && hermes chat -q "What is 2+2?"'
+<< EOF
+bash -c 'cd /opt/data/workspace && hermes chat -q "What is 2+2?"'
+EOF
 ```
 
 [Back to top](#table-of-contents)
@@ -691,14 +697,14 @@ Verify Hermes uses terminal tools to execute these and returns correct results.
 # gen2 MicroVM restricts direct kernel access
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- dmesg 2>&1 | head -5
+  <<< 'dmesg 2>&1 | head -5'
 # Expected: permission denied or operation not permitted
 # (Sandbox blocks direct kernel buffer reads)
 
 # Verify GCS FUSE mount is active
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- mount | grep fuse
+  <<< 'mount | grep fuse'
 # Expected: a gcsfuse entry for /opt/data
 ```
 
@@ -710,18 +716,24 @@ gcloud alpha run services ssh hermes-agent-alice \
 # Write a file in alice's service
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- bash -c 'echo "alice-private" > /opt/data/secret.txt'
+<<EOF
+bash -c 'echo "alice-private" > /opt/data/secret.txt'
+EOF
 
 # Verify bob cannot see it
 gcloud alpha run services ssh hermes-agent-bob \
   --project=$PROJECT_ID --region=$REGION \
-  -- cat /opt/data/secret.txt 2>&1
+<<EOF
+cat /opt/data/secret.txt 2>&1
+EOF
 # Expected: "No such file or directory"
 
 # Verify alice can still read it
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- cat /opt/data/secret.txt
+<<EOF
+cat /opt/data/secret.txt
+EOF
 # Expected: "alice-private"
 ```
 
@@ -733,7 +745,9 @@ gcloud alpha run services ssh hermes-agent-alice \
 # Write a marker file
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- bash -c 'echo "persist-test" > /opt/data/marker.txt'
+<<EOF
+bash -c 'echo "persist-test" > /opt/data/marker.txt'
+EOF
 
 # Force a new revision (simulates container restart)
 gcloud run services update hermes-agent-alice \
@@ -748,7 +762,9 @@ gcloud run services describe hermes-agent-alice \
 # Verify the file survived
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- cat /opt/data/marker.txt
+<<EOF
+cat /opt/data/marker.txt
+EOF
 # Expected: "persist-test"
 ```
 
@@ -782,7 +798,9 @@ Expected:
 ```bash
 gcloud alpha run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  -- curl -s -o /dev/null -w '%{http_code}' https://www.google.com
+<<EOF
+curl -s -o /dev/null -w '%{http_code}' https://www.google.com
+EOF
 # Expected: 200 (Cloud NAT provides outbound access)
 ```
 
