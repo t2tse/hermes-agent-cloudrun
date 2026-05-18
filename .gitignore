@@ -1,15 +1,21 @@
 # Terraform
 .terraform/
+.terraform.lock.hcl
 *.tfstate
 *.tfstate.backup
 *.tfplan
-# .terraform.lock.hcl  # Commit lock file for reproducible builds
 
-# Secrets
-*.pem
-*.key
+# Secrets -- NEVER commit
 terraform.tfvars
+*.auto.tfvars
+
+# Tools (local gcloud SDK, etc.)
+tools/
 
 # OS
 .DS_Store
-Thumbs.db
+
+# ADC / credentials
+adc_temp.json
+*.pem
+*.key
