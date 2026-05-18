@@ -7,7 +7,7 @@
 resource "google_service_account" "hermes_agent" {
   for_each = var.developers
 
-  account_id   = "hermes-agent-${each.key}"
+  account_id   = "hermes-agent-run-${each.key}"
   display_name = "Hermes Agent — ${each.key}"
   project      = var.project_id
 
@@ -70,7 +70,7 @@ resource "google_secret_manager_secret_iam_member" "hermes_gateway_token_accesso
 # ──────────────────────────────────────────────────────────────────────────────
 
 resource "google_service_account" "cloudbuild" {
-  account_id   = "hermes-cloudbuild"
+  account_id   = "hermes-run-cloudbuild"
   display_name = "Hermes Cloud Build Service Account"
   project      = var.project_id
 }

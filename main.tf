@@ -6,11 +6,11 @@
 terraform {
   required_version = ">= 1.5"
 
-  # Configure your own GCS backend bucket:
-  #   gsutil mb -p YOUR_PROJECT -l us-central1 gs://YOUR_PROJECT-tf-state
-  #   gsutil versioning set on gs://YOUR_PROJECT-tf-state
+  # Backend bucket must be created before first `terraform init`.
+  # Override with: terraform init -backend-config="bucket=YOUR_BUCKET"
+  # gsutil versioning set on gs://YOUR_BUCKET
   backend "gcs" {
-    bucket = "YOUR_PROJECT_ID-tf-state"
+    bucket = ""
     prefix = "hermes-cloudrun"
   }
 

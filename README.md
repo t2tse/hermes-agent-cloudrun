@@ -323,19 +323,23 @@ Hermes supports a permanent command allowlist (`command_allowlist` in config.yam
 ### Step 1: Create the GCP Project and State Bucket
 
 ```bash
+# Use an existing project
 export PROJECT_ID="your-project-id"
-export REGION="us-central1"
 
+# Create a new project (optional)
 gcloud projects create $PROJECT_ID --name="Hermes Agent"
 gcloud config set project $PROJECT_ID
 
-# Link billing account
+# Link billing account (optional)
 gcloud billing accounts list
 gcloud billing projects link $PROJECT_ID --billing-account=XXXXXX-XXXXXX-XXXXXX
 
+export TF_STATE_BUCKET_REGION="asia-southeast1"
+export REGION="us-central1"
+
 # Create Terraform state bucket
-gsutil mb -p $PROJECT_ID -l $REGION gs://${PROJECT_ID}-tf-state
-gsutil versioning set on gs://${PROJECT_ID}-tf-state
+gsutil mb -p $PROJECT_ID -l $TF_STATE_BUCKET_REGION "gs://${PROJECT_ID}-hermes-run-tf-state"
+gsutil versioning set on gs://${PROJECT_ID}-hermes-run-tf-state
 ```
 
 ### Step 2: Configure Variables

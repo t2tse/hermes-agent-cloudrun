@@ -1,6 +1,6 @@
 locals {
   gateway_auth_token = var.gateway_auth_token != "" ? var.gateway_auth_token : random_id.gateway_token.hex
-  hermes_image       = var.hermes_image != "" ? var.hermes_image : "${var.region}-docker.pkg.dev/${var.project_id}/hermes-agent/hermes:latest"
+  hermes_image       = var.hermes_image != "" ? var.hermes_image : "${var.region}-docker.pkg.dev/${var.project_id}/hermes-agent-run/hermes:latest"
 }
 
 resource "random_id" "gateway_token" {
@@ -10,7 +10,7 @@ resource "random_id" "gateway_token" {
 # Artifact Registry for Hermes container images
 resource "google_artifact_registry_repository" "hermes" {
   location      = var.region
-  repository_id = "hermes-agent"
+  repository_id = "hermes-agent-run"
   description   = "Docker images for Hermes Agent"
   format        = "DOCKER"
   project       = var.project_id
@@ -69,7 +69,7 @@ resource "null_resource" "build_hermes_image" {
 resource "google_storage_bucket" "hermes_workspace" {
   for_each = var.developers
 
-  name          = "${var.project_id}-hermes-workspace-${each.key}"
+  name          = "${var.project_id}-hermes-run-workspace-${each.key}"
   location      = var.region
   project       = var.project_id
   force_destroy = false
@@ -83,7 +83,7 @@ resource "google_storage_bucket" "hermes_workspace" {
 
 # Secret Manager
 resource "google_secret_manager_secret" "gateway_token" {
-  secret_id = "hermes-gateway-token"
+  secret_id = "hermes-run-gateway-token"
   project   = var.project_id
 
   replication {
