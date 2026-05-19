@@ -438,6 +438,7 @@ for DEVELOPER in alice bob; do
     --no-allow-unauthenticated \
     --port 8642 \
     --memory 2Gi --cpu 1 \
+    --no-cpu-throttling \    
     --scaling 1 \
     --network "hermes-run-vpc" \
     --subnet ${SUBNET} \
