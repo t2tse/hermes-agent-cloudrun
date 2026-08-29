@@ -1,18 +1,19 @@
 # Hermes Agent on GCP Cloud Run
 
-Deploy [Hermes Agent](https://github.com/nousresearch/hermes-agent) on Google Cloud with Cloud Run, Vertex AI via ADC — infrastructure managed by Terraform, services deployed via `gcloud`.
+Deploy [Hermes Agent](https://github.com/nousresearch/hermes-agent) on Google Cloud with Cloud Run (Services or Instances) and Vertex AI via ADC — infrastructure managed by Terraform, compute deployed via `gcloud`.
 
 ---
 
 ## Table of Contents
 
 - [Architecture](#architecture)
+- [Cloud Run Services vs. Cloud Run Instances](#cloud-run-services-vs-cloud-run-instances)
 - [Security Enhancements](#security-enhancements)
 - [Deployment Guide](#deployment-guide)
   - [Step 1: Create the GCP Project and State Bucket](#step-1-create-the-gcp-project-and-state-bucket)
   - [Step 2: Configure Variables](#step-2-configure-variables)
   - [Step 3: Deploy Infrastructure with Terraform](#step-3-deploy-infrastructure-with-terraform)
-  - [Step 4: Deploy Cloud Run Services](#step-4-deploy-cloud-run-services)
+  - [Step 4: Deploy Cloud Run (Option A: Services | Option B: Instances)](#step-4-deploy-cloud-run)
   - [Step 5: Verify](#step-5-verify)
 - [Adding Messaging Channels](#adding-messaging-channels)
   - [Telegram](#telegram)
@@ -29,32 +30,32 @@ Deploy [Hermes Agent](https://github.com/nousresearch/hermes-agent) on Google Cl
 graph TD
     Dev["Developer (gcloud CLI / TUI)"]
 
-    Dev -->|"gcloud alpha run services ssh"| SvcA
-    Dev -->|"gcloud alpha run services ssh"| SvcB
+    Dev -->|"gcloud beta run ssh"| SvcA
+    Dev -->|"gcloud beta run ssh"| InstB
 
     subgraph GCP["GCP Project"]
 
-        subgraph CR["Cloud Run (gen2 — MicroVM isolation per revision)"]
+        subgraph CR["Cloud Run (gen2 MicroVM / Sandboxed Container)"]
 
-            subgraph SvcA["Service: hermes-agent-alice"]
+            subgraph SvcA["Option A: Service (hermes-agent-alice)"]
                 direction LR
-                HA["Hermes Agent\n(gateway :8443)"]
+                HA["Hermes Agent\n(gateway :8642)"]
                 PA["Vertex AI Proxy\n(background process :8081)"]
                 HA -->|"localhost:8081\nOpenAI-compat API"| PA
             end
 
-            subgraph SvcB["Service: hermes-agent-bob"]
+            subgraph InstB["Option B: Instance (hermes-agent-bob)"]
                 direction LR
-                HB["Hermes Agent\n(gateway :8443)"]
+                HB["Hermes Agent\n(gateway :8642)"]
                 PB["Vertex AI Proxy\n(background process :8081)"]
                 HB -->|"localhost:8081\nOpenAI-compat API"| PB
             end
 
             SvcA -.-|"GCS FUSE mount /opt/data"| BktA["GCS Bucket\nalice-workspace"]
-            SvcB -.-|"GCS FUSE mount /opt/data"| BktB["GCS Bucket\nbob-workspace"]
+            InstB -.-|"GCS FUSE mount /opt/data"| BktB["GCS Bucket\nbob-workspace"]
 
             SvcA -.- SAA["SA: hermes-agent-alice@"]
-            SvcB -.- SAB["SA: hermes-agent-bob@"]
+            InstB -.- SAB["SA: hermes-agent-bob@"]
         end
 
         SAA -->|"roles/aiplatform.user (ADC)"| Vertex["Vertex AI (Global)\nGemini Models"]
@@ -98,16 +99,57 @@ graph TD
 
 | Component | Purpose |
 |-----------|---------|
-| **Cloud Run gen2** | MicroVM execution environment with seccomp syscall filtering + Sandbox2 Linux namespace isolation; required for GCS FUSE mounts |
+| **Cloud Run Services (Option A)** | Request-driven / autoscaled container execution with revision tracking and traffic splitting |
+| **Cloud Run Instances (Option B)** | Dedicated singleton compute container with explicit lifecycle management (`start`, `stop`, `restart`, `update`) for persistent AI agent workloads |
+| **Cloud Run gen2 / Sandbox** | MicroVM execution environment with seccomp syscall filtering + Sandbox2 Linux namespace isolation; required for GCS FUSE mounts |
 | **Vertex AI Proxy** | Lightweight Python background process (~200 LOC) replacing LiteLLM; runs inside the same container and injects ADC Bearer tokens into OpenAI-compatible requests |
-| **Per-Developer Service Accounts** | Each developer's Cloud Run service runs with a dedicated SA — no shared credentials, separate audit trail |
-| **GCS FUSE Workspace** | Each developer's `/opt/data` is backed by their own GCS bucket, providing unlimited persistent storage across revisions |
-| **DNS Private Google Access** | Private DNS zone routes `*.run.app` to `private.googleapis.com` VIPs for internal Cloud Run → Cloud Run calls |
+| **Per-Developer Service Accounts** | Each developer's Cloud Run workload runs with a dedicated SA — no shared credentials, separate audit trail |
+| **GCS FUSE Workspace** | Each developer's `/opt/data` is backed by their own GCS bucket, providing unlimited persistent storage across restarts and revisions |
+| **DNS Private Google Access** | Private DNS zone routes `*.run.app` to `private.googleapis.com` VIPs for internal Cloud Run calls |
 | **Cloud Build** | Builds and pushes the Hermes container image to Artifact Registry |
 | **Cloud Monitoring** | Dashboard with Cloud Run metrics, alert policies for container crashes and proxy errors |
 | **Cloud Logging** | Logs routed to GCS with lifecycle policies (90d Nearline, 365d Coldline) |
 
 [Back to top](#table-of-contents)
+
+---
+
+## Cloud Run Services vs. Cloud Run Instances
+
+[Back to top](#table-of-contents)
+
+Cloud Run offers two primary deployment models for running containerized workloads. Depending on your operational requirements, Hermes Agent can be deployed as either a **Cloud Run Service** (Option A) or a **Cloud Run Instance** (Option B).
+
+### Comparison Matrix
+
+| Feature | Option A: Cloud Run Service | Option B: Cloud Run Instance |
+|---------|-----------------------------|------------------------------|
+| **Primary Concept** | Serverless HTTP/gRPC service with autoscaling and revision management | Dedicated singleton container instance with explicit lifecycle controls |
+| **Scaling & Concurrency** | Autoscales from min to max instances based on request concurrency or CPU | **1 dedicated singleton instance** (no autoscaling or scale-to-zero) |
+| **Lifecycle Model** | Managed via revisions, traffic percentages, and gradual rollouts | Managed via direct instance state (`create`, `start`, `stop`, `restart`, `update`, `delete`) |
+| **Long-Running Execution** | Request timeout up to 60 minutes; requires `--no-cpu-throttling` and `min-instances=1` for background tasks | Runs continuously uninterrupted for hours, days, or weeks |
+| **Addressability & URLs** | Service URL load-balanced across active revision containers (`https://service-<hash>.<region>.run.app`) | Direct instance URL pointing to the specific singleton container (`https://instance-<project-number>.<region>.run.app`) |
+| **Direct Management Commands** | `gcloud run deploy`, `gcloud run services update / describe / list` | `gcloud beta run instances create / start / stop / restart / update / describe / list` |
+| **Interactive SSH Access** | Supported via `gcloud beta run ssh <SERVICE_NAME>` | Supported via `gcloud beta run ssh <INSTANCE_NAME>` (or `gcloud beta run instances ssh`) |
+| **GCS FUSE Mounts** | Supported (gen2 execution environment) | Supported (`--add-volume mount-path=/opt/data,type=cloud-storage,bucket=...`) |
+| **Direct VPC Egress** | Supported (`--network`, `--subnet`, `--vpc-egress all-traffic`) | Supported (`--network`, `--subnet`, `--vpc-egress all-traffic`) |
+| **Secret Manager Integration** | Supported (`--set-secrets`) | Supported (`--set-secrets`) |
+| **Billing / Cost Model** | Pay per request + allocated instance resources (or always-allocated CPU) | Billed continuously while the instance is in the `RUNNING` state |
+
+---
+
+### When to Use Which Option?
+
+#### Choose Option A (Cloud Run Service) if:
+- **API-First & Webhook Workloads:** You are exposing Hermes primarily as a REST API or webhook receiver that handles fluctuating incoming traffic.
+- **Revision History & Traffic Splitting:** You want built-in Canary deployments, revision rollback, and percentage-based traffic routing between different agent versions or configurations.
+- **Shared Standard Infrastructure:** Your team has existing CI/CD pipelines and governance policies standardized around `gcloud run deploy` and Cloud Run service specifications.
+
+#### Choose Option B (Cloud Run Instance) if:
+- **Autonomous Persistent AI Agents:** Hermes runs continuous background tasks, scheduled cron jobs, persistent agentic loops, or long-polling messaging channels (such as Telegram or Discord bot gateways) that should never experience scale-down or request timeouts.
+- **Dedicated Developer Workstations / Dev Environments:** You want a 1:1 dedicated personal sandbox for each developer with predictable instance lifecycle control (`start` when working, `stop` when idle to save costs).
+- **Direct Singleton Addressability:** You want a deterministic direct URL to a specific developer's container instance without load-balancing across multiple instances or revisions.
+- **Fast Spin-up & Predictability:** Instances spin up quickly and run continuously without concurrency throttling or multi-instance session routing complexities.
 
 ---
 
@@ -121,7 +163,7 @@ This deployment implements defense-in-depth across infrastructure, network, iden
 
 #### Cloud Run Sandboxing
 
-Every Cloud Run gen2 revision runs inside a hardware-backed MicroVM with:
+Every Cloud Run gen2 workload (service revision or instance) runs inside a hardware-backed MicroVM with:
 
 - **Sandbox2 Linux namespace isolation** — each container instance gets its own namespaced view of the filesystem, network, and process tree.
 - **seccomp syscall filtering** — restricts the set of syscalls available to the container, reducing the attack surface for kernel exploits.
@@ -130,7 +172,7 @@ Every Cloud Run gen2 revision runs inside a hardware-backed MicroVM with:
 #### Per-Developer Isolation
 
 Each developer gets:
-- A dedicated Cloud Run service with its own revision history
+- A dedicated Cloud Run service or instance with its own isolated environment
 - A dedicated GCS workspace bucket (only that SA has `roles/storage.objectUser`)
 - A dedicated service account with strictly scoped IAM bindings
 
@@ -143,7 +185,7 @@ There is no shared filesystem — Alice's `/opt/data` bucket cannot be accessed 
 | Direct VPC Egress | Cloud Run containers egress through the VPC subnet (no public IP on containers) |
 | Cloud NAT | Outbound-only internet access for pulling images and calling Vertex AI |
 | Deny-all ingress firewall | Default deny on the VPC; only IAP SSH (35.235.240.0/20) is allowed |
-| Private DNS for `*.run.app` | Internal Cloud Run service calls stay on the Google private network |
+| Private DNS for `*.run.app` | Internal Cloud Run service/instance calls stay on the Google private network |
 
 ### Identity Layer
 
@@ -152,7 +194,7 @@ There is no shared filesystem — Alice's `/opt/data` bucket cannot be accessed 
 The entire authentication chain uses identity federation — no API keys stored anywhere:
 
 ```
-Cloud Run Service → GCP Service Account → Vertex AI
+Cloud Run Workload (Service / Instance) → GCP Service Account → Vertex AI
 ```
 
 - The Vertex AI proxy calls `google.auth.default()` to obtain credentials via the metadata server.
@@ -168,7 +210,7 @@ Each developer's service account has only:
 | `roles/aiplatform.user` | Call Vertex AI Gemini models |
 | `roles/logging.logWriter` | Write structured logs |
 | `roles/monitoring.metricWriter` | Write custom metrics |
-| `roles/run.invoker` | Call other internal Cloud Run services |
+| `roles/run.invoker` | Call other internal Cloud Run services/instances |
 | `roles/storage.objectUser` | Read/write their own workspace GCS bucket only |
 | `roles/secretmanager.secretAccessor` | Read gateway token (per-secret binding, not project-wide) |
 
@@ -290,7 +332,7 @@ Hermes supports a permanent command allowlist (`command_allowlist` in config.yam
 | Layer | Control | Type |
 |-------|---------|------|
 | Infrastructure | Cloud Run gen2 MicroVM (Sandbox2 + seccomp) | Automatic |
-| Infrastructure | Per-developer service + GCS bucket isolation | Automatic |
+| Infrastructure | Per-developer service / instance + GCS bucket isolation | Automatic |
 | Network | Direct VPC Egress, deny-all ingress, Cloud NAT | Automatic |
 | Network | Private DNS for `*.run.app` | Configured |
 | Identity | ADC via metadata server (zero API keys) | Automatic |
@@ -312,7 +354,7 @@ Hermes supports a permanent command allowlist (`command_allowlist` in config.yam
 
 [Back to top](#table-of-contents)
 
-> **Architecture note:** Terraform provisions the supporting infrastructure (VPC, IAM, Artifact Registry, GCS buckets, Secret Manager, monitoring). The Cloud Run services themselves are deployed with `gcloud run deploy` commands in [Step 4](#step-4-deploy-cloud-run-services). This gives precise control over revision configuration without Terraform managing Cloud Run state.
+> **Architecture note:** Terraform provisions the supporting infrastructure (VPC, IAM, Artifact Registry, GCS buckets, Secret Manager, monitoring). The Cloud Run compute workloads themselves are deployed with `gcloud` CLI commands in [Step 4](#step-4-deploy-cloud-run). You can deploy Hermes either as **Option A: Cloud Run Services** or **Option B: Cloud Run Instances**.
 
 ### Prerequisites
 
@@ -371,7 +413,7 @@ vertex_model_aliases = {
   "gemini-2.5-flash"              = "gemini-2.5-flash"
 }
 
-# Developers — each gets a dedicated Cloud Run service and GCS workspace bucket
+# Developers — each gets a dedicated Cloud Run service / instance and GCS workspace bucket
 developers = {
   "alice" = { active = true }
   "bob"   = { active = true }
@@ -399,7 +441,7 @@ This will:
 7. Create the gateway token in Secret Manager
 8. Set up monitoring dashboard, alert policies, and log sink
 
-Deployment takes approximately 5 minutes
+Deployment takes approximately 5 minutes.
 
 After `terraform apply`, capture the outputs you'll need in Step 4:
 
@@ -414,9 +456,15 @@ Key outputs:
 - `artifact_registry_url` — image URL
 - `gateway_token_secret` — secret name for `--set-secrets`
 
-### Step 4: Deploy Cloud Run Services
+---
 
-Deploy one Cloud Run service per developer. Replace variables with your actual values from `terraform output`.
+### Step 4: Deploy Cloud Run
+
+Choose **Option A** (Services) or **Option B** (Instances) below.
+
+#### Option A: Deploy as Cloud Run Services
+
+Deploy one Cloud Run service per developer using standard request-driven execution:
 
 ```bash
 export PROJECT_ID="your-project-id"
@@ -438,7 +486,7 @@ for DEVELOPER in alice bob; do
     --no-allow-unauthenticated \
     --port 8642 \
     --memory 2Gi --cpu 1 \
-    --no-cpu-throttling \    
+    --no-cpu-throttling \
     --scaling 1 \
     --network "hermes-run-vpc" \
     --subnet ${SUBNET} \
@@ -455,22 +503,96 @@ for DEVELOPER in alice bob; do
 done
 ```
 
+---
+
+#### Option B: Deploy as Cloud Run Instances
+
+Deploy one dedicated singleton Cloud Run instance per developer using the `gcloud beta run instances` surface:
+
+```bash
+export PROJECT_ID="your-project-id"
+export REGION="us-central1"
+export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/hermes-agent-run/hermes:latest"
+
+# Ensure gcloud beta components are installed
+gcloud components install beta
+
+# Deploy per-developer instances
+for DEVELOPER in alice bob; do
+  SA=$(terraform output -json brain_service_accounts | jq -r ".\"${DEVELOPER}\"")
+  BUCKET=$(terraform output -json workspace_bucket_names | jq -r ".\"${DEVELOPER}\"")
+  SUBNET=$(terraform output -raw cloudrun_subnet)
+
+  gcloud beta run instances create "hermes-agent-${DEVELOPER}" \
+    --image ${IMAGE} \
+    --project ${PROJECT_ID} \
+    --region ${REGION} \
+    --service-account ${SA} \
+    --port 8642 \
+    --memory 2Gi --cpu 1 \
+    --network "hermes-run-vpc" \
+    --subnet ${SUBNET} \
+    --vpc-egress all-traffic \
+    --add-volume "mount-path=/opt/data,type=cloud-storage,bucket=${BUCKET}" \
+    --set-secrets "GATEWAY_AUTH_TOKEN=hermes-run-gateway-token:latest" \
+    --set-env-vars "HERMES_HOME=/opt/data" \
+    --set-env-vars "HERMES_DEFAULT_MODEL=gemini-2.5-flash" \
+    --set-env-vars "VERTEX_LOCATION=global" \
+    --set-env-vars "VERTEX_PROJECT=${PROJECT_ID}" \
+    --set-env-vars "VERTEX_PROXY_PORT=8081" \
+    --set-env-vars "^##^VERTEX_MODEL_ALIASES={\"gemini-2.5-flash\":\"gemini-2.5-flash\",\"gemini-2.5-pro\":\"gemini-2.5-pro\"}" \
+    --labels "developer=${DEVELOPER}"
+done
+```
+
+##### Managing Cloud Run Instances
+
+Cloud Run instances provide lifecycle commands:
+
+```bash
+# List all running instances
+gcloud beta run instances list --project=$PROJECT_ID --region=$REGION
+
+# Check instance status and URL
+gcloud beta run instances describe hermes-agent-alice --project=$PROJECT_ID --region=$REGION
+
+# Stop an instance (e.g. when idle to pause billing)
+gcloud beta run instances stop hermes-agent-alice --project=$PROJECT_ID --region=$REGION
+
+# Start a stopped instance
+gcloud beta run instances start hermes-agent-alice --project=$PROJECT_ID --region=$REGION
+
+# Restart an instance
+gcloud beta run instances restart hermes-agent-alice --project=$PROJECT_ID --region=$REGION
+
+# Update configuration (e.g. environment variables or image)
+gcloud beta run instances update hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+  --update-env-vars="HERMES_DEFAULT_MODEL=gemini-2.5-pro"
+
+# Delete an instance
+gcloud beta run instances delete hermes-agent-alice --project=$PROJECT_ID --region=$REGION
+```
+
+---
+
 ### Step 5: Verify
 
 ```bash
 export PROJECT_ID="your-project-id"
 export REGION="us-central1"
 
-# List deployed services
+# For Option A (Services):
 gcloud run services list --project=$PROJECT_ID --region=$REGION
+gcloud run services describe hermes-agent-alice --project=$PROJECT_ID --region=$REGION
 
-# Check service details
-gcloud run services describe hermes-agent-alice \
-  --project=$PROJECT_ID --region=$REGION
+# For Option B (Instances):
+gcloud beta run instances list --project=$PROJECT_ID --region=$REGION
+gcloud beta run instances describe hermes-agent-alice --project=$PROJECT_ID --region=$REGION
 
-# View recent logs for a developer's service
+# View recent logs (works for both Services and Instances):
 gcloud logging read \
-  'resource.type="cloud_run_revision" AND resource.labels.service_name="hermes-agent-alice"' \
+  '(resource.type="cloud_run_revision" OR resource.type="cloud_run_instance") AND (resource.labels.service_name="hermes-agent-alice" OR resource.labels.instance_name="hermes-agent-alice")' \
   --project=$PROJECT_ID --limit=20 --format='value(textPayload)'
 ```
 
@@ -482,7 +604,7 @@ gcloud logging read \
 
 [Back to top](#table-of-contents)
 
-Hermes Agent supports messaging platforms as channels. Each platform requires a bot token and configuration in the Cloud Run service environment.
+Hermes Agent supports messaging platforms as channels. Each platform requires a bot token and configuration in the Cloud Run service or instance environment.
 
 ### Telegram
 
@@ -507,10 +629,8 @@ echo -n "YOUR_BOT_TOKEN" | gcloud secrets create hermes-telegram-token-alice \
 #### 3. Grant Access to the Developer's SA
 
 ```bash
-# Get the SA email for this developer
-SA=$(gcloud run services describe hermes-agent-alice \
-  --project=$PROJECT_ID --region=$REGION \
-  --format='value(spec.template.spec.serviceAccountName)')
+# Retrieve the SA email for this developer
+SA=$(terraform output -json brain_service_accounts | jq -r '."alice"')
 
 gcloud secrets add-iam-policy-binding hermes-telegram-token-alice \
   --project=$PROJECT_ID \
@@ -518,12 +638,22 @@ gcloud secrets add-iam-policy-binding hermes-telegram-token-alice \
   --role="roles/secretmanager.secretAccessor"
 ```
 
-#### 4. Update the Cloud Run Service with the Bot Token
+#### 4. Update the Cloud Run Service / Instance with the Bot Token
 
 Bot tokens are mounted as environment variables from Secret Manager — they never touch the filesystem, so Hermes file tools cannot read them.
 
+**For Option A (Cloud Run Service):**
 ```bash
 gcloud run services update hermes-agent-alice \
+  --project=$PROJECT_ID \
+  --region=$REGION \
+  --update-secrets="TELEGRAM_BOT_TOKEN=hermes-telegram-token-alice:latest" \
+  --update-env-vars="TELEGRAM_ALLOWED_USERS=YOUR_TELEGRAM_USER_ID"
+```
+
+**For Option B (Cloud Run Instance):**
+```bash
+gcloud beta run instances update hermes-agent-alice \
   --project=$PROJECT_ID \
   --region=$REGION \
   --update-secrets="TELEGRAM_BOT_TOKEN=hermes-telegram-token-alice:latest" \
@@ -534,13 +664,21 @@ gcloud run services update hermes-agent-alice \
 
 #### 5. Enable Telegram in Hermes Config
 
+**For Option A (Services):**
 ```bash
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
   <<< 'hermes config set messaging.telegram.enabled true'
 ```
 
-Updating the config triggers a new revision automatically.
+**For Option B (Instances):**
+```bash
+gcloud beta run instances ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+  <<< 'hermes config set messaging.telegram.enabled true'
+```
+
+Updating the config saves to the GCS FUSE workspace and persists across restarts.
 
 #### 6. Pair Your Telegram Account
 
@@ -550,8 +688,16 @@ Send any message to your bot on Telegram. It will reply with a pairing code:
 
 Approve the pairing code from inside the container:
 
+**For Option A (Services):**
 ```bash
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run services ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+  <<< 'hermes pairing approve telegram XXXXXXXX'
+```
+
+**For Option B (Instances):**
+```bash
+gcloud beta run instances ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
   <<< 'hermes pairing approve telegram XXXXXXXX'
 ```
@@ -570,7 +716,7 @@ Send a message to your bot on Telegram. You should now receive a response from H
 
 [Back to top](#table-of-contents)
 
-Step-by-step guide to verify every feature after deployment.
+Step-by-step guide to verify every feature after deployment for both **Option A (Cloud Run Services)** and **Option B (Cloud Run Instances)**.
 
 ### Prerequisites
 
@@ -581,8 +727,16 @@ export REGION="us-central1"
 
 ### Test 1: Vertex AI Proxy Health
 
+**Option A (Services):**
 ```bash
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run services ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+  <<< 'curl -s http://127.0.0.1:8081/health'
+```
+
+**Option B (Instances):**
+```bash
+gcloud beta run instances ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
   <<< 'curl -s http://127.0.0.1:8081/health'
 ```
@@ -593,8 +747,16 @@ Expected: `{"status":"ok"}`
 
 ### Test 2: Model Listing
 
+**Option A (Services):**
 ```bash
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run services ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+  <<< 'curl -s http://127.0.0.1:8081/v1/models | python3 -m json.tool'
+```
+
+**Option B (Instances):**
+```bash
+gcloud beta run instances ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
   <<< 'curl -s http://127.0.0.1:8081/v1/models | python3 -m json.tool'
 ```
@@ -605,14 +767,27 @@ Expected: JSON listing your configured model aliases.
 
 ### Test 3: Non-Streaming Inference
 
+**Option A (Services):**
 ```bash
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
 << EOF
 curl -s http://127.0.0.1:8081/v1/chat/completions \
--H 'Content-Type: application/json' \
--d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"What is 2+2?"}],"stream":false}' \
-| python3 -m json.tool 
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"What is 2+2?"}],"stream":false}' \
+  | python3 -m json.tool 
+EOF
+```
+
+**Option B (Instances):**
+```bash
+gcloud beta run instances ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+<< EOF
+curl -s http://127.0.0.1:8081/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"What is 2+2?"}],"stream":false}' \
+  | python3 -m json.tool 
 EOF
 ```
 
@@ -622,13 +797,25 @@ Expected: A JSON response with `choices[0].message.content` containing "4".
 
 ### Test 4: Streaming (SSE) Inference
 
+**Option A (Services):**
 ```bash
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
 << EOF
 curl -s http://127.0.0.1:8081/v1/chat/completions \
--H 'Content-Type: application/json' \
--d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"Write a haiku about clouds"}],"stream":true}'
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"Write a haiku about clouds"}],"stream":true}'
+EOF
+```
+
+**Option B (Instances):**
+```bash
+gcloud beta run instances ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+<< EOF
+curl -s http://127.0.0.1:8081/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"Write a haiku about clouds"}],"stream":true}'
 EOF
 ```
 
@@ -638,8 +825,16 @@ Expected: Multiple `data: {...}` lines with `object: "chat.completion.chunk"`, e
 
 ### Test 5: Hermes Agent Health
 
+**Option A (Services):**
 ```bash
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run services ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+  <<< 'hermes doctor'
+```
+
+**Option B (Instances):**
+```bash
+gcloud beta run instances ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
   <<< 'hermes doctor'
 ```
@@ -650,12 +845,22 @@ Expected: Lists available tools (terminal, file operations, git, python, etc.) a
 
 ### Test 6: Interactive Chat Session
 
-```bash
-# Start an interactive shell, then run hermes chat
-gcloud alpha run services ssh hermes-agent-alice \
-  --project=$PROJECT_ID --region=$REGION
+Start an interactive shell session, then run `hermes chat`:
 
-# Inside the container:
+**Option A (Services):**
+```bash
+gcloud beta run services ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION
+```
+
+**Option B (Instances):**
+```bash
+gcloud beta run instances ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION
+```
+
+**Inside the container (both options):**
+```bash
 cd /opt/data/workspace
 hermes chat
 ```
@@ -667,8 +872,18 @@ In the chat:
 
 You can also run a single non-interactive query:
 
+**Option A (Services):**
 ```bash
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run services ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+<< EOF
+bash -c 'cd /opt/data/workspace && hermes chat -q "What is 2+2?"'
+EOF
+```
+
+**Option B (Instances):**
+```bash
+gcloud beta run instances ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
 << EOF
 bash -c 'cd /opt/data/workspace && hermes chat -q "What is 2+2?"'
@@ -694,16 +909,31 @@ Verify Hermes uses terminal tools to execute these and returns correct results.
 
 ### Test 8: Sandbox Verification
 
+**Option A (Services):**
 ```bash
-# gen2 MicroVM restricts direct kernel access
-gcloud alpha run services ssh hermes-agent-alice \
+# MicroVM restricts direct kernel access
+gcloud beta run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
   <<< 'dmesg 2>&1 | head -5'
 # Expected: permission denied or operation not permitted
-# (Sandbox blocks direct kernel buffer reads)
 
 # Verify GCS FUSE mount is active
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run services ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+  <<< 'mount | grep fuse'
+# Expected: a gcsfuse entry for /opt/data
+```
+
+**Option B (Instances):**
+```bash
+# Sandboxed MicroVM restricts direct kernel access
+gcloud beta run instances ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+  <<< 'dmesg 2>&1 | head -5'
+# Expected: permission denied or operation not permitted
+
+# Verify GCS FUSE mount is active
+gcloud beta run instances ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
   <<< 'mount | grep fuse'
 # Expected: a gcsfuse entry for /opt/data
@@ -713,16 +943,17 @@ gcloud alpha run services ssh hermes-agent-alice \
 
 ### Test 9: Multi-Developer Isolation
 
+**Option A (Services):**
 ```bash
-# Write a file in alice's service
-gcloud alpha run services ssh hermes-agent-alice \
+# Write a file in alice's environment
+gcloud beta run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
 <<EOF
 bash -c 'echo "alice-private" > /opt/data/secret.txt'
 EOF
 
 # Verify bob cannot see it
-gcloud alpha run services ssh hermes-agent-bob \
+gcloud beta run services ssh hermes-agent-bob \
   --project=$PROJECT_ID --region=$REGION \
 <<EOF
 cat /opt/data/secret.txt 2>&1
@@ -730,7 +961,33 @@ EOF
 # Expected: "No such file or directory"
 
 # Verify alice can still read it
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run services ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+<<EOF
+cat /opt/data/secret.txt
+EOF
+# Expected: "alice-private"
+```
+
+**Option B (Instances):**
+```bash
+# Write a file in alice's environment
+gcloud beta run instances ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+<<EOF
+bash -c 'echo "alice-private" > /opt/data/secret.txt'
+EOF
+
+# Verify bob cannot see it
+gcloud beta run instances ssh hermes-agent-bob \
+  --project=$PROJECT_ID --region=$REGION \
+<<EOF
+cat /opt/data/secret.txt 2>&1
+EOF
+# Expected: "No such file or directory"
+
+# Verify alice can still read it
+gcloud beta run instances ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
 <<EOF
 cat /opt/data/secret.txt
@@ -742,9 +999,10 @@ EOF
 
 ### Test 10: GCS Workspace Persistence
 
+**Option A (Services):**
 ```bash
 # Write a marker file
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
 <<EOF
 bash -c 'echo "persist-test" > /opt/data/marker.txt'
@@ -755,13 +1013,30 @@ gcloud run services update hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
   --update-env-vars="TEST_REVISION=$(date +%s)"
 
-# Wait for new revision to be ready
-gcloud run services describe hermes-agent-alice \
+# Verify the file survived
+gcloud beta run services ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
-  --format='value(status.latestReadyRevisionName)'
+<<EOF
+cat /opt/data/marker.txt
+EOF
+# Expected: "persist-test"
+```
+
+**Option B (Instances):**
+```bash
+# Write a marker file
+gcloud beta run instances ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+<<EOF
+bash -c 'echo "persist-test" > /opt/data/marker.txt'
+EOF
+
+# Restart the instance
+gcloud beta run instances restart hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION
 
 # Verify the file survived
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run instances ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
 <<EOF
 cat /opt/data/marker.txt
@@ -774,9 +1049,9 @@ EOF
 ### Test 11: Logging Pipeline
 
 ```bash
-# Check logs are flowing to Cloud Logging
+# Check logs are flowing to Cloud Logging (supports Services and Instances)
 gcloud logging read \
-  'resource.type="cloud_run_revision" AND resource.labels.service_name=~"hermes-agent-.*"' \
+  '(resource.type="cloud_run_revision" OR resource.type="cloud_run_instance") AND (resource.labels.service_name=~"hermes-agent-.*" OR resource.labels.instance_name=~"hermes-agent-.*")' \
   --project=$PROJECT_ID --limit=5 --format='value(textPayload)'
 
 # Verify log sink exists
@@ -796,8 +1071,19 @@ Expected:
 
 ### Test 12: Outbound Network Access
 
+**Option A (Services):**
 ```bash
-gcloud alpha run services ssh hermes-agent-alice \
+gcloud beta run services ssh hermes-agent-alice \
+  --project=$PROJECT_ID --region=$REGION \
+<<EOF
+curl -s -o /dev/null -w '%{http_code}' https://www.google.com
+EOF
+# Expected: 200 (Cloud NAT provides outbound access)
+```
+
+**Option B (Instances):**
+```bash
+gcloud beta run instances ssh hermes-agent-alice \
   --project=$PROJECT_ID --region=$REGION \
 <<EOF
 curl -s -o /dev/null -w '%{http_code}' https://www.google.com

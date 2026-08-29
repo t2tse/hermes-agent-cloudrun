@@ -3,12 +3,12 @@
 ###############################################################################
 
 output "cloudrun_subnet" {
-  description = "Name of the Cloud Run Direct VPC Egress subnet (use in --subnet flag of gcloud run deploy)."
+  description = "Name of the Cloud Run Direct VPC Egress subnet (use in --subnet flag of gcloud run deploy or gcloud beta run instances create)."
   value       = google_compute_subnetwork.cloudrun_subnet.name
 }
 
 output "workspace_bucket_names" {
-  description = "Map of developer name to their GCS workspace bucket name (used in gcloud run deploy --add-volume)."
+  description = "Map of developer name to their GCS workspace bucket name (used in --add-volume flag of gcloud run deploy or gcloud beta run instances create)."
   value = {
     for dev, _ in var.developers :
     dev => google_storage_bucket.hermes_workspace[dev].name
@@ -16,7 +16,7 @@ output "workspace_bucket_names" {
 }
 
 output "brain_service_accounts" {
-  description = "Map of developer name to their Cloud Run service account email (use in --service-account flag of gcloud run deploy)."
+  description = "Map of developer name to their Cloud Run service account email (use in --service-account flag of gcloud run deploy or gcloud beta run instances create)."
   value = {
     for dev, _ in var.developers :
     dev => google_service_account.hermes_agent[dev].email

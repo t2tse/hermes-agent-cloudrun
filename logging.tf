@@ -35,8 +35,8 @@ resource "google_logging_metric" "hermes_crash" {
   name    = "hermes-run/container_restart"
   project = var.project_id
   filter  = <<-EOT
-    resource.type="cloud_run_revision"
-    resource.labels.service_name=~"hermes-agent-.*"
+    (resource.type="cloud_run_revision" OR resource.type="cloud_run_instance")
+    (resource.labels.service_name=~"hermes-agent-.*" OR resource.labels.instance_name=~"hermes-agent-.*")
     severity>="ERROR"
     textPayload=~"process exited|container.*exit|SIGKILL|unhandledRejection"
   EOT
@@ -58,7 +58,7 @@ resource "google_monitoring_alert_policy" "hermes_crash" {
     display_name = "Hermes container exiting repeatedly"
 
     condition_threshold {
-      filter          = "resource.type = \"cloud_run_revision\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.hermes_crash.name}\""
+      filter          = "metric.type = \"logging.googleapis.com/user/${google_logging_metric.hermes_crash.name}\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
@@ -77,7 +77,7 @@ resource "google_monitoring_alert_policy" "hermes_crash" {
   }
 
   documentation {
-    content   = "A Hermes Agent container is crashing. Check logs with: gcloud logging read 'resource.type=\"cloud_run_revision\" AND resource.labels.service_name=~\"hermes-agent-.*\"' --project=PROJECT_ID --limit=50. Common causes: Vertex AI proxy connection issues, config errors, or OOM."
+    content   = "A Hermes Agent container is crashing. Check logs with: gcloud logging read '(resource.type=\"cloud_run_revision\" OR resource.type=\"cloud_run_instance\") AND (resource.labels.service_name=~\"hermes-agent-.*\" OR resource.labels.instance_name=~\"hermes-agent-.*\")' --project=PROJECT_ID --limit=50. Common causes: Vertex AI proxy connection issues, config errors, or OOM."
     mime_type = "text/markdown"
   }
 
@@ -89,8 +89,8 @@ resource "google_logging_metric" "vertex_proxy_error" {
   name    = "hermes-run/vertex_proxy_error"
   project = var.project_id
   filter  = <<-EOT
-    resource.type="cloud_run_revision"
-    resource.labels.service_name=~"hermes-agent-.*"
+    (resource.type="cloud_run_revision" OR resource.type="cloud_run_instance")
+    (resource.labels.service_name=~"hermes-agent-.*" OR resource.labels.instance_name=~"hermes-agent-.*")
     textPayload=~"vertex-proxy.*error"
   EOT
 
@@ -111,7 +111,7 @@ resource "google_monitoring_alert_policy" "vertex_proxy_error" {
     display_name = "High rate of Vertex AI proxy errors"
 
     condition_threshold {
-      filter          = "resource.type = \"cloud_run_revision\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.vertex_proxy_error.name}\""
+      filter          = "metric.type = \"logging.googleapis.com/user/${google_logging_metric.vertex_proxy_error.name}\""
       comparison      = "COMPARISON_GT"
       threshold_value = 10
       duration        = "300s"
@@ -178,7 +178,7 @@ resource "google_logging_project_sink" "hermes_gcs" {
   destination = "storage.googleapis.com/${google_storage_bucket.hermes_logs.name}"
 
   filter = <<-EOT
-    resource.type="cloud_run_revision" AND resource.labels.service_name=~"hermes-agent-.*"
+    (resource.type="cloud_run_revision" OR resource.type="cloud_run_instance") AND (resource.labels.service_name=~"hermes-agent-.*" OR resource.labels.instance_name=~"hermes-agent-.*")
   EOT
 
   unique_writer_identity = true
@@ -209,7 +209,7 @@ resource "google_monitoring_dashboard" "hermes" {
           widget = {
             title = "Hermes Agent Logs (all developers)"
             logsPanel = {
-              filter = "resource.type=\"cloud_run_revision\"\nresource.labels.service_name=~\"hermes-agent-.*\""
+              filter = "(resource.type=\"cloud_run_revision\" OR resource.type=\"cloud_run_instance\")\n(resource.labels.service_name=~\"hermes-agent-.*\" OR resource.labels.instance_name=~\"hermes-agent-.*\")"
             }
           }
         },
@@ -221,7 +221,7 @@ resource "google_monitoring_dashboard" "hermes" {
           widget = {
             title = "Vertex AI Proxy Logs"
             logsPanel = {
-              filter = "resource.type=\"cloud_run_revision\"\nresource.labels.service_name=~\"hermes-agent-.*\"\ntextPayload=~\"\\[vertex-proxy\\]\""
+              filter = "(resource.type=\"cloud_run_revision\" OR resource.type=\"cloud_run_instance\")\n(resource.labels.service_name=~\"hermes-agent-.*\" OR resource.labels.instance_name=~\"hermes-agent-.*\")\ntextPayload=~\"\\[vertex-proxy\\]\""
             }
           }
         },
@@ -236,7 +236,7 @@ resource "google_monitoring_dashboard" "hermes" {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type = \"cloud_run_revision\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.hermes_crash.name}\""
+                    filter = "metric.type = \"logging.googleapis.com/user/${google_logging_metric.hermes_crash.name}\""
                     aggregation = {
                       alignmentPeriod  = "300s"
                       perSeriesAligner = "ALIGN_SUM"
@@ -260,7 +260,7 @@ resource "google_monitoring_dashboard" "hermes" {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type = \"cloud_run_revision\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.vertex_proxy_error.name}\""
+                    filter = "metric.type = \"logging.googleapis.com/user/${google_logging_metric.vertex_proxy_error.name}\""
                     aggregation = {
                       alignmentPeriod  = "300s"
                       perSeriesAligner = "ALIGN_SUM"
@@ -281,7 +281,7 @@ resource "google_monitoring_dashboard" "hermes" {
           widget = {
             title = "Hermes Errors Only"
             logsPanel = {
-              filter = "resource.type=\"cloud_run_revision\"\nresource.labels.service_name=~\"hermes-agent-.*\"\nseverity>=\"ERROR\""
+              filter = "(resource.type=\"cloud_run_revision\" OR resource.type=\"cloud_run_instance\")\n(resource.labels.service_name=~\"hermes-agent-.*\" OR resource.labels.instance_name=~\"hermes-agent-.*\")\nseverity>=\"ERROR\""
             }
           }
         },
